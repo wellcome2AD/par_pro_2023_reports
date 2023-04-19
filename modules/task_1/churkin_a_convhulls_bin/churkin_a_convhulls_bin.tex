@@ -1,0 +1,1532 @@
+\documentclass[14pt, russian]{extarticle}
+\usepackage[utf8]{inputenc}
+\usepackage[T2A]{fontenc}
+\usepackage{babel}
+\usepackage[a4paper,
+left=2cm,
+right=2cm,
+top=2cm,
+bottom=2cm]{geometry}
+\usepackage{color}
+\usepackage{mathtools}
+\usepackage{listings}
+\usepackage{graphicx}
+\usepackage{tocloft}
+\usepackage{indentfirst}
+\usepackage{enumitem}
+
+\setlength{\parindent}{0.8cm}
+\setlength{\parskip}{0.4cm}
+\renewcommand{\contentsname}{}
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=none,
+	language=C++,
+	aboveskip=3mm,
+	belowskip=3mm,
+	showstringspaces=false,
+	columns=flexible,
+	basicstyle={\small\ttfamily},
+	numbers=none,
+	numberstyle=\tiny\color{gray},
+	keywordstyle=\color{blue},
+	commentstyle=\color{dkgreen},
+	stringstyle=\color{mauve},
+	breaklines=true,
+	breakatwhitespace=true,
+	tabsize=4
+}
+
+\title{}
+\author{}
+\date{}
+
+\begin{document}
+	\begin{titlepage}
+		\begin{center}
+			{\bfseries МИНИСТЕРСТВО НАУКИ И ВЫСШЕГО ОБРАЗОВАНИЯ \\
+				РОССИЙСКОЙ ФЕДЕРАЦИИ}
+			\\
+			Федеральное государственное автономное образовательное учреждение высшего образования
+			\\
+			{\bfseries «Национальный исследовательский Нижегородский государственный университет им. Н.И. Лобачевского»\\(ННГУ)
+				\\Институт информационных технологий, математики и механики} \\
+		\end{center}
+		
+		\vspace{8em}
+		
+		\begin{center}
+			ОТЧЕТ \\ по лабораторной работе \\
+			«Построение выпуклой оболочки для компонент бинарного изображения»
+		\end{center}
+		
+		\vspace{5em}
+		
+		
+		\begin{flushright}
+			{\bfseries Выполнил:} студент группы\\382006-1\\Чуркин А.С. \underline{\hspace{3cm}} \linebreak\linebreak\linebreak
+			{\bfseries Проверил:} младший научный\\сотрудник\\Нестеров А.Ю. \underline{\hspace{3cm}} 
+		\end{flushright}
+		
+		
+		\vspace{\fill}
+		
+		\begin{center}
+			Нижний Новгород\\2023
+		\end{center}
+		
+	\end{titlepage}
+	
+	% Содержание
+	\tableofcontents
+	\thispagestyle{empty}
+	\newpage
+	
+	\pagestyle{plain}
+	\setcounter{page}{3}
+
+	% Введение
+	\section{Введение}
+	Компьютерное зрение – научная область, связанная с анализом изображений и видео. Методы компьютерного зрения имеют широкое применение в медицине, робототехнике, различной промышленности. Компьютерное зрение применимо даже в области безопасности.
+	
+	Маркировка связных компонент бинарного изображения – один из базовых алгоритмов анализа и обработки изображений, а последующее отыскание выпуклой оболочки каждой из помеченных компонент позволяет, как минимум, выделить их контуры. Полученные данные о контурах объектов, в свою очередь, могут быть использованы при последующем анализе изображения.
+
+	В данной работе рассмотрены последовательная и две параллельные (при помощи OpenMP и TBB) реализации поиска выпуклых оболочек компонент связности бинарного изображения, а также проведён сравнительный анализ скорости работы реализаций на различных примерах.
+	\newpage
+
+	\section{Постановка задачи}
+	Необходимо реализовать 3 варианта программы для поиска выпуклых оболочек компонент бинарных изображений на языке C++: последовательный вариант; с использованием библиотеки OpenMP; c использованием библиотеки TBB.
+	
+	Результатом работы в каждом из вариантов должен быть набор наборов точек, составляющих компоненты бинарных изображений.
+	
+	Реализации с использованием OpenMP и TBB должны корректно выполняться на произвольном числе потоков. Для проверки корректности работы программ следует использовать фреймворк для автоматического тестирования Google Test. С его помощью требуется написать не менее 5 автоматических тестов. Код каждой из программ должен быть расположен в следующих 4-х файлах: main.cpp, convhulls\_bin.h, convhulls\_bin.cpp и CMakeLists.txt.
+	
+	В завершение необходимо провести сравнение времени работы 3-х вышеуказанных реализаций алгоритма и сделать общий вывод об эффективности использования параллельных схем.
+	
+	\newpage
+
+	\section{Описание алгоритма}
+	\noindent\textbf{Входные данные:}\\
+	\indent Бинарное изображение в виде одномерного массива image размерности $ M * N $, где $ M $ – высота изображения, а $ N $ – ширина (такие обозначения были приняты, поскольку гораздо удобнее воспринимать изображение как матрицу $ M * N $).
+	
+	\noindent\textbf{Алгоритм:}\\
+	\indent Введём счётчик label = 2. Далее будем последовательно проходить по всем точкам изображения ($ i = \overline{1,M} $, $ j = \overline{1,N} $) и из каждой ещё не пройденной чёрной точки (т.е. точки, где image$[i * N + j] = 1 $), будем запускать алгоритм поиска в ширину.
+	
+	\noindent \textit{\textbf{Поиск в ширину:}}\\
+	\indent Точка добавляется в очередь для обработки, после чего мы начинаем рассмотрение очереди. Белые точки (точки со значением 0), а также точки, выходящие за границы изображения или уже ранее пройденные, игнорируются. Если же в очереди оказалась ещё не пройденная чёрная точка (точка со значением 1), эту точку пометим как label и запишем её координаты в соответствующий ей набор наборов точек (components[label]). Затем в очередь добавляются все точки, потенциально окружающие данную (мы понимаем под связностью 8-связность, значит, нашу точку потенциально могут окружать ещё 8 других точек). Рассмотрение очереди продолжается, пока все точки в ней не иссякнут.
+	
+	Таким образом, на данном этапе мы уже имеем информацию о всех компонентах связности изображения. Осталось лишь запустить алгоритм Грэхема поиска выпуклой оболочки для каждого из наборов точек (для точек каждой из компонент связности).
+	
+	\noindent \textit{\textbf{Алгоритм Грэхема:}}
+	\begin{enumerate}[topsep=0pt, labelwidth=!, labelindent=0pt]
+		\item В наборе точек points находится самая левая нижняя точка (точка с минимальными значениями $ x $ и $ y $). Назовём её minPoint.
+		\item minPoint удаляется из набора точек, а все остальные точки $ P_k(x_k, y_k) $ сортируются по увеличению угла, который составляет вектор\\
+		$ V_k = \{ minPoint, P_k \} $ с осью $ x $. В случае, если два вектора составляют одинаковый угол, необходимо производить сортировку по увеличению длины этих векторов.
+		\item Создаётся массив result для сохранения точек, входящих в выпуклую оболочку. minPoint и первая (после сортировки) точка из набора точек добавляются в result. Далее пройдём по всем остальным точкам массива points, на каждом шаге рассматривая тройку точек:
+		$ p_1 $ и $ p_2 $ – предпоследняя и последняя точки в result; $ p_3 $ – рассматриваемая $i$-я точка в points.
+		
+		Если $ p_1 $, $ p_2 $ и $ p_3 $ лежат на одной прямой, $ p_2 $ удаляется из result, и в result добавляется $ p_3 $.
+		
+		Если $ p_1 $, $ p_2 $ и $ p_3 $ образуют правый поворот, необходимо исключать точки из result, пока две последние точки в result не перестанут образовывать правый поворот, после чего добавить в result $ p_3 $.
+		
+		Если $ p_1 $, $ p_2 $ и $ p_3 $ образуют левый поворот, в result лишь добавляется $ p_3 $.
+	\end{enumerate}
+
+	После применения алгоритма Грэхема к точкам каждой из компонент связности (в отдельности) мы получим для каждой из компонент связности соответствующую ей выпуклую оболочку.
+
+	\noindent\textbf{Результат:}\\
+	Некоторое число наборов точек, каждый из которых представляет выпуклую оболочку для соответствующей ему компоненты изображения.
+	\newpage
+	
+	\section{Описание схемы распараллеливания}
+	Распараллеливание нашего алгоритма можно осуществить различными способами. Поскольку исходный алгоритм состоит из двух последовательно выполняющихся этапов, то параллельная версия будет иметь аналогичную структуру. Сначала выполним маркировку компонент связности, а затем – проход Грэхема для каждой из обнаруженных компонент.
+
+	\noindent\textbf{Маркировка компонент связности}\\
+	\indent На этом этапе алгоритма разобьём наше изображение на несколько вертикальных лент, для каждой из которых параллельно запустим последовательный алгоритм маркировки компонент связности.\\
+	\indent В ходе такой маркировки для обеспечения возможности дальнейшего объединения связанных между собой компонент необходимо реализовать синхронизацию доступа различных потоков к переменной label. Это позволит сохранить уникальные идентификаторы для каждой из компонент связности. Также каждый из потоков (или каждая из задач, в случае с TBB) должен (должна) сохранять информацию о найденных компонентах отдельно от других, чтобы не возникало проблем с асинхронной записью в одну и ту же структуру данных.\\
+	\indent После того, как эта параллельная часть алгоритма выполнена, необходимо произвести сначала сбор информации о всех найденных компонентах в \textbf{одну общую} структуру, а затем – операцию объединения связанных между собой компонент из разных лент. Для этого пройдём сверху вниз по точкам соприкосновения соседних лент и запишем, какие компоненты связаны между собой, в множество connections. Компоненты связаны между собой, если для хотя бы одной точки компоненты из верхней ленты найдётся точка (одна из 3-х нижних), принадлежащая другой компоненте.\\
+	\indent Выяснив, какие компоненты связаны между собой, можно произвести процесс слияния таких связанных компонент. Для удобства слияния создадим словарь redirections, куда будем записывать «перенаправления» одной компоненты в другую, чтобы не осуществлять обновление всего множества связей connections после слияния каждой пары компонент.\\
+	\indent Теперь будем последовательно идти по всему множеству connections, учитывая, что оно отсортировано в лексикографическом порядке (например, $ (2, 3), (2, 4), (3, 4), (3, 5) ... $). Для каждой такой связи $ (c_{1i}, c_{2i}) $ произведём слияние компоненты с номером $ c_{2i} $ в компоненту $ c_{2i} $, а в словарь redirections запишем, что компонента с номером $ c_{2i} $ была «перенаправлена» в компоненту $ c_{1i} $.\\
+	\indent Абзац выше умалчивает о том, как использовать словарь redirections. Важно, что перед каждым слиянием компонент через словарь redirections нужно узнать, не «перенаправлена» ли каждая из компонент в другую. Если компонента «перенаправлена» в другую, необходимо пройти все такие её перенаправления от максимального к минимальному, пока настоящий текущий номер компоненты не будет найден, и только затем выполнять слияние.
+	
+	После выполнения слияний всех связанных между собой компонент из разных лент процесс маркировки компонент можно считать завершённым.
+	
+	
+	\noindent\textbf{Параллелизм на этапе построения выпуклых оболочек для компонент связности}\\
+	\indent Здесь существует несколько путей. Например, можно искать выпуклые оболочки для нескольких компонент связности параллельно (этот способ и был выбран в данной работе), либо же последовательно искать выпуклые оболочки для каждой из компонент, но реализовать параллелизм алгоритма Грэхема, распределяя точки между потоками и запуская алгоритм Грэхема на каждом из поднаборов, после чего объединить полученные точки и запустить Грэхема уже с оставшимися точками.\\
+	\newpage
+	
+	\section{Описание OpenMP-версии программы}
+	
+	OpenMP-версия программы состоит из 3-х основных файлов: main.cpp (содержит тесты), convhulls\_bin.h (содержит заголовки функций программы) и convhulls\_bin.cpp (содержит непосредственно программную реализацию).\\ \indent OpenMP-версия программы полностью содержит последовательную версию для возможности сравнения результатов последовательной и параллельной версий, а также дополнительные функции для обеспечения параллелизма.
+	
+	За параллельную маркировку компонент бинарного изображения отвечает функция MarkComponentsParallel. Она принимает одномерный массив image, а также значения $ M $ и $ N $ (высоту и ширину изображения). Сама функция MarkComponentsParallel использует внутри возможности OpenMP и функцию MarkComponentsOfPart для параллельной маркировки компонент частей (лент) изображения. После этого происходит последовательное слияние связанных между собой компонент изображения из разных лент и возвращается результат.
+	
+	За параллелизм в отыскании выпуклых оболочек компонент связности отвечает функция LeaveOnlyHullsParallel, принимающая на вход указатель на набор наборов точек (иными словами, наборы точек каждой из компонент связности). Параллелизм внутри данной функции реализован по компонентам связности и также обеспечивается средствами OpenMP. Для отыскания выпуклых оболочек для каждой из компонент связности производится вызов GrahamScan.
+	\newpage
+	
+	\section{Описание TBB-версии программы}
+	
+	TBB-версия программы также состоит из 3-х основных файлов: main.cpp (содержит тесты), convhulls\_bin.h (содержит заголовки функций программы) и convhulls\_bin.cpp (содержит непосредственно программную реализацию).\\ \indent TBB-версия программы полностью содержит последовательную версию для возможности сравнения результатов последовательной и параллельной версий, а также дополнительные функции для обеспечения параллелизма.
+	
+	За параллельную маркировку компонент бинарного изображения отвечает функция MarkComponentsParallel. Она принимает одномерный массив image, а также значения $ M $ и $ N $ (высоту и ширину изображения). Сама функция MarkComponentsParallel использует внутри возможности TBB для параллельной маркировки компонент частей (лент) изображения. В частности, для обеспечения параллелизма маркировки изображения был написан класс-функтор CompFunctor. После этого происходит последовательное слияние связанных между собой компонент изображения из разных лент и возвращается результат.
+	
+	За параллелизм в отыскании выпуклых оболочек компонент связности отвечает функция LeaveOnlyHullsParallel, принимающая на вход указатель на набор наборов точек (иными словами, наборы точек каждой из компонент связности). Параллелизм внутри данной функции реализован по компонентам связности и также обеспечивается средствами TBB. В частности, был реализован класс-функтор HullsFunctor.
+	\newpage
+	
+	\section{Результаты экспериментов}
+	Работа программы была проверена при помощи следующих 6 автоматических тестов:
+	\begin{enumerate}[topsep=0pt, labelwidth=!, labelindent=0pt]
+		\item Заданное непустое изображение $10 * 10$
+		\item Заданное пустое изображение $10 * 10$
+		\item Случайное изображение $ 10 * 10 $
+		\item Случайное изображение $ 20 * 10 $
+		\item Случайное изображение $ 40 * 40 $
+		\item Случайное изображение $ 1500 * 1500 $.
+	\end{enumerate}
+	
+	\indent Все тесты завершились успешно. Время выполнения 6-го теста было измерено с помощью OpenMP-функции omp\_get\_wtime() и TBB-функции\\tick\_count::now(). Были получены следующие результаты:
+	
+	\begin{table}[ht]
+		\centering
+		\begin{tabular}{| c | c | c | c |}
+			\hline
+			Потоков & Время (Посл-но) & Время (OpenMP) & Время (TBB) \\ [0.5ex]
+			\hline
+			1 & 2.5288 & 2.6266 & 2.5802 \\
+			\hline
+			2 & 2.5436 & 1.7787 & 1.75611 \\
+			\hline
+			4 & 2.5656 & 1.3686 & 1.34427 \\
+			\hline
+			8 & 2.5712 & 1.2219 & 1.25046 \\
+			\hline
+		\end{tabular}
+	\end{table}
+
+	Рассмотренные эксперименты подтверждают корректность работы алгоритма на произвольно заданном количестве процессов.
+	\newpage
+	
+	\section{Полученные выводы}
+	Реализации алгоритма при помощи OpenMP и TBB получились достаточно схожи во времени выполнения, и одинаково быстрее последовательного варианта. На основе результатов проведённых экспериментов был получен следующий вывод: для рассмотренного параллельного алгоритма действительно целесообразно использовать многопоточность. Однако стоит заметить, что при существенном увеличении числа потоков будет происходить лишь увеличение времени работы из-за увеличения накладных расходов библиотек, обеспечивающих параллелизм, а также накладных расходов на слияние связанных компонент лент, на которые было разделено изображение.
+	\newpage
+	
+	\section{Заключение}
+	Данная лабораторная работа позволила ознакомиться с возможностями использования параллелизма на уровне потоков, а также рассмотреть реализации OpenMP и TBB для C++.
+	
+	В ходе работы были успешно реализованы последовательная и 2 параллельные версии алгоритма. В ходе экспериментов удалось выяснить: на случайном изображении параллельные OpenMP и TBB-версии алгоритмов существенно быстрее, чем последовательная реализация.
+
+	\newpage
+	
+	\section{Литература}
+	\begin{enumerate}
+		\item en.wikipedia.org: сайт – URL: https://en.wikipedia.org/wiki/Connected-component\_labeling (дата обращения: 10.03.2023). —  Текст: электронный.
+		\item edu.mmcs.sfedu.ru: сайт – URL: https://edu.mmcs.sfedu.ru/pluginfile.php/\\15283/mod\_resource/content/10/Binary.pdf (дата обращения: 10.03.2023). —  Текст: электронный.
+		\item ru.wikipedia.org: сайт – URL: https://ru.wikipedia.org/wiki/Алгоритм\\\_Грэхема (дата обращения: 11.03.2023). —  Текст: электронный.
+	\end{enumerate}
+	\newpage
+	
+	\section{Приложение}
+	
+	\subsection{OpenMP: main.cpp}
+	\begin{lstlisting}
+// Copyright 2023 Churkin Aleksandr
+#include <gtest/gtest.h>
+#include <omp.h>
+#include <vector>
+#include "./convhulls_bin.h"
+
+void CheckImages(int* imageOrig, int* imagePar, int* imageSeq, int M, int N,
+bool compareWithOriginal) {
+	std::map<int, int> bijectionMap;
+	bijectionMap[0] = 0;
+	
+	for (int y = 0; y < M; y++) {
+		for (int x = 0; x < N; x++) {
+			int pOrig = imageOrig[y * N + x];
+			int p1 = imagePar[y * N + x];
+			int p2 = imageSeq[y * N + x];
+			
+			// checks that both processed images keep only original pixels
+			if (compareWithOriginal) {
+				EXPECT_FALSE((p1 == 0 && pOrig != 0) || (p1 != 0 && pOrig == 0));
+			}
+			
+			// checking bijection
+			if (bijectionMap.find(p1) == bijectionMap.end()) {
+				bijectionMap[p1] = p2;
+			} else {
+				EXPECT_EQ(p2, bijectionMap[p1]);
+			}
+		}
+	}
+}
+
+void RunRandomImageTest(int M, int N) {
+	std::vector<int> imageOrig = GetRandomBinImage(M, N);
+	std::vector<int> imagePar(imageOrig);
+	std::vector<int> imageSeq(imageOrig);
+	
+	double t1Par, t2Par, t1Seq, t2Seq, tParTotal, tSeqTotal;
+	
+	/* std::cout << "Original image:\n";
+	PrintImage(&imageOrig[0], M, N); */
+	
+	t1Par = omp_get_wtime();
+	auto componentsPar = MarkComponentsParallel(&imagePar[0], M, N);
+	t2Par = omp_get_wtime();
+	
+	t1Seq = omp_get_wtime();
+	auto componentsSeq = MarkComponents(&imageSeq[0], M, N);
+	t2Seq = omp_get_wtime();
+	
+	tParTotal = (t2Par - t1Par);
+	tSeqTotal = (t2Seq - t1Seq);
+	
+	RedrawImageFromComponents(&imagePar[0], componentsPar, M, N);
+	RedrawImageFromComponents(&imageSeq[0], componentsSeq, M, N);
+	
+	// Check 1: checking that after labelling components original pixels saved
+	// and we have bijection between components of both processed images
+	CheckImages(&imageOrig[0], &imagePar[0], &imageSeq[0], M, N, true);
+	
+	t1Par = omp_get_wtime();
+	componentsPar = LeaveOnlyHulls(&componentsPar, M, N);
+	t2Par = omp_get_wtime();
+	
+	t1Seq = omp_get_wtime();
+	componentsSeq = LeaveOnlyHulls(&componentsSeq, M, N);
+	t2Seq = omp_get_wtime();
+	
+	tParTotal += (t2Par - t1Par);
+	tSeqTotal += (t2Seq - t1Seq);
+	
+	RedrawImageFromComponents(&imagePar[0], componentsPar, M, N);
+	RedrawImageFromComponents(&imageSeq[0], componentsSeq, M, N);
+	
+	// Check 2: checking that after Graham convex hulls search
+	// we have bijection between components of both processed images
+	CheckImages(&imageOrig[0], &imagePar[0], &imageSeq[0], M, N, false);
+	
+	/* std::cout << "Parallel processed result:\n";
+	PrintImage(&imagePar[0], M, N);
+	
+	std::cout << "Sequential processed result:\n";
+	PrintImage(&imageSeq[0], M, N); */
+	
+	/* std::cout << "Duration parallel: " << tParTotal << "\n";
+	std::cout << "Duration sequential: " << tSeqTotal << "\n"; */
+}
+
+TEST(ConvHullsBin_OpenMP, Test_1_Can_Get_Hulls_10X10) {
+	const int M = 10, N = 10;
+	std::vector<int> image({
+		0, 1, 0, 0, 0, 1, 1, 1, 0, 0,
+		1, 1, 0, 0, 1, 1, 1, 1, 0, 0,
+		1, 1, 0, 1, 1, 1, 1, 1, 0, 0,
+		1, 1, 0, 1, 0, 0, 1, 1, 0, 1,
+		1, 1, 0, 0, 0, 0, 1, 1, 0, 1,
+		1, 1, 0, 0, 0, 0, 1, 1, 0, 1,
+		1, 1, 0, 0, 0, 0, 1, 1, 0, 1,
+		1, 1, 0, 0, 0, 0, 1, 1, 0, 1,
+		1, 1, 0, 0, 0, 0, 1, 1, 0, 0,
+		1, 1, 0, 0, 0, 0, 1, 1, 0, 0,
+	});
+	
+	auto components = MarkComponentsParallel(&image[0], M, N);
+	components = LeaveOnlyHulls(&components, M, N);
+	RedrawImageFromComponents(&image[0], components, M, N);
+	
+	std::vector<int> rightResult({
+		0, 2, 0, 0, 0, 3, 0, 3, 0, 0,
+		2, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 3, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 3, 0, 0, 0, 0, 0, 4,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		2, 2, 0, 0, 0, 0, 3, 3, 0, 0,
+	});
+	
+	CheckImages(&image[0], &image[0], &rightResult[0], M, N, false);
+}
+
+TEST(ConvHullsBin_OpenMP, Test_2_EmptyImage_10X10) {
+	const int M = 10, N = 10;
+	std::vector<int> image({
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	});
+	
+	auto components = MarkComponentsParallel(&image[0], M, N);
+	components = LeaveOnlyHulls(&components, M, N);
+	
+	EXPECT_EQ(components.size(), 0);
+}
+
+TEST(ConvHullsBin_OpenMP, Test_3_RandomImage_10X10) {
+	RunRandomImageTest(10, 10);
+}
+
+TEST(ConvHullsBin_OpenMP, Test_4_RandomImage_20X10) {
+	RunRandomImageTest(20, 10);
+}
+
+TEST(ConvHullsBin_OpenMP, Test_5_RandomImage_40X40) {
+	RunRandomImageTest(40, 40);
+}
+
+/* TEST(ConvHullsBin_OpenMP, Test_6_RandomImage_1500X1500) {
+	// Note that recreating images from info about connected components
+	// also takes time,
+	// and this time was not counted in tests
+	RunRandomImageTest(1500, 1500);
+} */
+
+int main(int argc, char **argv) {
+	::testing::InitGoogleTest(&argc, argv);
+	return RUN_ALL_TESTS();
+}
+
+	\end{lstlisting}
+	\newpage
+	\subsection{OpenMP: convhulls\_bin.h}
+	\begin{lstlisting}
+// Copyright 2023 Churkin Aleksandr
+#ifndef MODULES_TASK_2_CHURKIN_A_CONVHULLS_BIN_CONVHULLS_BIN_H_
+#define MODULES_TASK_2_CHURKIN_A_CONVHULLS_BIN_CONVHULLS_BIN_H_
+
+#include <vector>
+#include <map>
+#include <utility>
+
+typedef std::vector<std::pair<int, int>> Points;
+
+// .......... Common functions ..........................
+std::vector<int> GetRandomBinImage(int M, int N);
+void PrintImage(int* image, int M, int N);
+
+bool isCoordinatesInImage(int x, int y, int M, int N);
+double rotate(const std::pair<int, int>& p1,
+const std::pair<int, int>& p2,
+const std::pair<int, int>& p3);
+Points GrahamScan(Points* points);
+
+// Helpful function to compare that everything is ok
+void RedrawImageFromComponents(int* image, const std::map<int, Points>& components, int M, int N);
+// ......................................................
+
+// .......... Functions for SEQUENTIAL algorighm ..........
+void BFS(int* image, int M, int N, int yStart, int xStart,
+int label);
+std::map<int, Points> MarkComponents(int* image, int M, int N);
+std::map<int, Points> LeaveOnlyHulls(
+std::map<int, Points>* components, int M, int N);
+// ......................................................
+
+// .......... Functions for PARALLEL algorighm ..........
+bool isCoordinatesInBounds(int x, int y, int imgYStart, int imgYEnd, int N);
+
+void BFSParallel(int* image, int imgYStart, int imgYEnd, int N, int yStart, int xStart,
+int label);
+void MarkComponentsOfPart(int* image, int imgYStart, int imgYEnd, int N);
+
+std::map<int, Points> MarkComponentsParallel(int* image, int M, int N);
+std::map<int, Points> LeaveOnlyHullsParallel(
+std::map<int, Points>* components, int M, int N);
+// ......................................................
+
+#endif  // MODULES_TASK_2_CHURKIN_A_CONVHULLS_BIN_CONVHULLS_BIN_H_
+
+	\end{lstlisting}
+	\newpage
+	\subsection{OpenMP: convhulls\_bin.cpp}
+	\begin{lstlisting}
+// Copyright 2023 Churkin Aleksandr
+#include <omp.h>
+#include <vector>
+#include <utility>
+#include <random>
+#include <iostream>
+#include <map>
+#include <set>
+#include <queue>
+#include <algorithm>
+#include <string>
+#include "../../../modules/task_2/churkin_a_convhulls_bin/convhulls_bin.h"
+
+// 1. Generates random binary image with height M and width N
+std::vector<int> GetRandomBinImage(int M, int N) {
+	std::default_random_engine rnd;
+	std::uniform_int_distribution<> dist(1, 10);
+	
+	std::vector<int> image(M * N);
+	
+	for (size_t i = 0; i < M; i++)
+	for (size_t j = 0; j < N; j++) {
+		int number = dist(rnd);
+		if (number <= 4) {
+			image[i * N + j] = 1;
+		} else {
+			image[i * N + j] = 0;
+		}
+	}
+	
+	return image;
+}
+
+void PrintImage(int* image, int M, int N) {
+	for (int i = 0; i < M; i++) {
+		for (int j = 0; j < N; j++) std::cout << image[i * N + j] << " ";
+		std::cout << '\n';
+	}
+}
+
+bool isCoordinatesInImage(int x, int y, int M, int N) {
+	return x >= 0 && x < N && y >= 0 && y < M;
+}
+
+double rotate(const std::pair<int, int>& p1,
+const std::pair<int, int>& p2,
+const std::pair<int, int>& p3) {
+	return (p2.first - p1.first) * (p3.second - p2.second) -
+	(p2.second - p1.second) * (p3.first - p2.first);
+}
+
+Points GrahamScan(Points* points) {
+	if ((*points).size() <= 2) return (*points);
+	
+	Points result;
+	
+	// Finding minimal point - point with minimum x and y (left bottom point)
+	std::pair<int, int> minPoint = (*points)[0];
+	int minPointIdx = 0;
+	
+	for (size_t i = 1; i < (*points).size(); i++) {
+		if ((*points)[i].first < minPoint.first ||
+		((*points)[i].first == minPoint.first &&
+		(*points)[i].second < minPoint.second)) {
+			minPoint = (*points)[i];
+			minPointIdx = i;
+		}
+	}
+	
+	// Removing minimal point from our points
+	std::swap((*points)[minPointIdx], (*points)[(*points).size() - 1]);
+	(*points).pop_back();
+	
+	// Sorting points by our custom criteria
+	std::sort((*points).begin(), (*points).end(),
+	[minPoint](const std::pair<int, int>& p1,
+	const std::pair<int, int>& p2) {
+		// Vector v1 coordinates
+		double v1x = p1.first - minPoint.first;
+		double v1y = p1.second - minPoint.second;
+		// Vector v2 coordinates
+		double v2x = p2.first - minPoint.first;
+		double v2y = p2.second - minPoint.second;
+		
+		// Performing comparison by det
+		double det = v1x * v2y - v1y * v2x;
+		
+		if (det > 0) {
+			// v1 < v2 by det
+			return true;
+		} else if (det == 0) {
+			// v1 == v2 by det. Let's compare by length of vectors
+			double len_v1 = sqrt(pow(v1x, 2) + pow(v1y, 2));
+			double len_v2 = sqrt(pow(v2x, 2) + pow(v2y, 2));
+			
+			return len_v1 < len_v2;
+		} else {
+			// v1 > v2 by det
+			return false;
+		}
+	});
+	
+	// Then we do Graham scan
+	// minPoint and points[0]
+	// are the first points of our convex hull
+	result.push_back(minPoint), result.push_back((*points)[0]);
+	
+	for (size_t i = 1; i < (*points).size(); i++) {
+		// p1
+		std::pair<int, int> p1 = result[result.size() - 2];
+		// p2
+		std::pair<int, int> p2 = result[result.size() - 1];
+		// p3
+		std::pair<int, int> p3 = (*points)[i];
+		
+		double rot = rotate(p1, p2, p3);
+		// p1, p2, p3 on one line -> replacing p2 with p3
+		if (rot == 0) {
+			result[result.size() - 1] = p3;
+		} else if (rot < 0) {
+			// While p1, p2, p3 form right turn -> exclude p2
+			while (rotate(result[result.size() - 2], result[result.size() - 1],
+			p3) <= 0)
+			result.pop_back();
+			result.push_back(p3);
+		} else {
+			// left turns are ok - just adding p3 to our result
+			result.push_back(p3);
+		}
+	}
+	
+	return result;
+}
+
+void RedrawImageFromComponents(int* image, const std::map<int, Points>& components,
+int M, int N) {
+	for (int i = 0; i < M * N; i++)
+	image[i] = 0;
+	
+	int labelCounter = 1;
+	for (auto it = components.begin(); it != components.end(); it++, labelCounter++) {
+		for (int i = 0; i < it->second.size(); i++) {
+			image[(it->second[i].second) * N + (it->second[i].first)] = labelCounter;
+		}
+	}
+}
+
+/* ............................. SEQUENTIAL ............................. */
+
+std::map<int, Points> allComponentsSeq;
+
+void BFS(int* image, int M, int N, int yStart, int xStart,
+int label) {
+	std::queue<std::pair<int, int>> q;
+	q.push(std::make_pair(xStart, yStart));
+	while (!q.empty()) {
+		int x = q.front().first;
+		int y = q.front().second;
+		q.pop();
+		if (x >= 0 && y >= 0 && y < M && x < N && image[y * N + x] == 1) {
+			image[y * N + x] = label;
+			allComponentsSeq[label].push_back(std::make_pair(x, y));
+			
+			q.push(std::make_pair(x - 1, y - 1));  // bottom left
+			q.push(std::make_pair(x - 1, y));      // left
+			q.push(std::make_pair(x - 1, y + 1));  // top left
+			q.push(std::make_pair(x, y + 1));      // top
+			q.push(std::make_pair(x + 1, y + 1));  // top right
+			q.push(std::make_pair(x + 1, y));      // right
+			q.push(std::make_pair(x, y - 1));      // bottom
+			q.push(std::make_pair(x + 1, y - 1));  // bottom right
+		}
+	}
+}
+
+// 2. Marks components on image (labeling starts from 2)
+std::map<int, Points> MarkComponents(int* image, int M, int N) {
+	allComponentsSeq.clear();
+	
+	int label = 2;
+	// i is y coordinate
+	for (int i = 0; i < M; i++)
+	// j is x coordinate
+	for (int j = 0; j < N; j++) {
+		if (image[i * N + j] == 1)
+		BFS(image, M, N, i, j, label), label++;
+	}
+	return allComponentsSeq;
+}
+
+// Here we should launch Graham for every component to get its convex hull
+std::map<int, Points> LeaveOnlyHulls(
+std::map<int, Points>* components, int M, int N) {
+	
+	// Then, we should launch Graham for every component to get its convex hull
+	std::map<int, Points> hulls;
+	
+	for (auto& kv : (*components)) {
+		int label = kv.first;
+		auto& points = kv.second;
+		hulls[label] = GrahamScan(&points);
+	}
+	
+	return hulls;
+}
+
+/* .............................. PARALLEL .............................. */
+
+bool isCoordinatesInBounds(int x, int y, int imgYStart, int imgYEnd, int N) {
+	return x >= 0 && x < N && y >= imgYStart && y < imgYEnd;
+}
+
+// Threads store their connected components in componentsOfThreads[threadNumber]
+std::vector<std::map<int, Points>> componentsOfThreads;
+
+void BFSParallel(int* image, int imgYStart, int imgYEnd, int N, int yStart, int xStart,
+int label) {
+	int threadNumber = omp_get_thread_num();
+	
+	std::queue<std::pair<int, int>> q;
+	q.push(std::make_pair(xStart, yStart));
+	while (!q.empty()) {
+		int x = q.front().first;
+		int y = q.front().second;
+		
+		q.pop();
+		if (isCoordinatesInBounds(x, y, imgYStart, imgYEnd, N) && image[y * N + x] == 1) {
+			// assigning label
+			image[y * N + x] = label;
+			
+			componentsOfThreads[threadNumber][label].push_back(std::make_pair(x, y));
+			
+			q.push(std::make_pair(x - 1, y - 1));  // bottom left
+			q.push(std::make_pair(x - 1, y));      // left
+			q.push(std::make_pair(x - 1, y + 1));  // top left
+			q.push(std::make_pair(x, y + 1));      // top
+			q.push(std::make_pair(x + 1, y + 1));  // top right
+			q.push(std::make_pair(x + 1, y));      // right
+			q.push(std::make_pair(x, y - 1));      // bottom
+			q.push(std::make_pair(x + 1, y - 1));  // bottom right
+		}
+	}
+}
+
+int label;
+
+void MarkComponentsOfPart(int* image, int imgYStart, int imgYEnd, int N) {
+	// i is y coordinate
+	for (int i = imgYStart; i <= imgYEnd; i++)
+	// j is x coordinate
+	for (int j = 0; j < N; j++) {
+		if (image[i * N + j] == 1) {
+			int lTemp;
+			# pragma omp critical
+			{
+				lTemp = ++label;
+			}
+			BFSParallel(image, imgYStart, imgYEnd, N, i, j, lTemp);
+		}
+	}
+}
+
+std::map<int, Points> MarkComponentsParallel(int* image, int M, int N) {
+	// We divide our image on horizontal parts of piecesDefault height
+	// (but the last part will have piecesDefault + piecesLeft height)
+	std::string st;
+	
+	label = 1;
+	
+	int tasksCount;
+	int piecesDefault;
+	int piecesLeft;
+	
+	#pragma omp parallel private(st)
+	{
+		tasksCount = std::min(omp_get_num_threads(), M);
+		piecesDefault = M / tasksCount;
+		piecesLeft = M % tasksCount;
+		
+		#pragma omp single
+		componentsOfThreads.resize(omp_get_num_threads());
+		
+		# pragma omp for
+		for (int i = 0; i < tasksCount; i++) {
+			// last thread will process remained part too
+			if (i == tasksCount - 1) {
+				MarkComponentsOfPart(image, i * piecesDefault, (i + 1) * piecesDefault + piecesLeft, N);
+			} else {
+				MarkComponentsOfPart(image, i * piecesDefault, (i + 1) * piecesDefault, N);
+			}
+		}
+	}  // parallelism ends
+	
+	// There we will find parts that have connections between each other
+	std::set<std::pair<int, int>> connections;
+	
+	for (int k = 0; k < tasksCount - 1; k++) {
+		int y = ((k + 1) * piecesDefault - 1);
+		
+		for (int x = 0; x < N; x++) {
+			// Checking 3 points that lying under (x, y)
+			if (image[y * N + x] > 0) {
+				if (isCoordinatesInImage((x - 1), (y + 1), M, N) &&
+				image[(y + 1) * N + (x - 1)] > 0) {
+					connections.insert(
+					std::make_pair(std::min(image[y * N + x],
+					image[(y + 1) * N + (x - 1)]),
+					std::max(image[y * N + x],
+					image[(y + 1) * N + (x - 1)])));
+				}
+				
+				if (isCoordinatesInImage(x, (y + 1), M, N) &&
+				image[(y + 1) * N + x] > 0) {
+					connections.insert(
+					std::make_pair(std::min(image[y * N + x],
+					image[(y + 1) * N + x]),
+					std::max(image[y * N + x],
+					image[(y + 1) * N + x])));
+				}
+				
+				if (isCoordinatesInImage((x + 1), (y + 1), M, N) &&
+				image[(y + 1) * N + (x + 1)] > 0) {
+					connections.insert(
+					std::make_pair(std::min(image[y * N + x],
+					image[(y + 1) * N + (x + 1)]),
+					std::max(image[y * N + x],
+					image[(y + 1) * N + (x + 1)])));
+				}
+			}
+		}
+	}
+	
+	// Let's save our components in one map
+	std::map<int, Points> components;
+	for (auto componentsOfSomeThread : componentsOfThreads) {
+		components.insert(componentsOfSomeThread.begin(), componentsOfSomeThread.end());
+		componentsOfSomeThread.clear();
+	}
+	componentsOfThreads.clear();
+	
+	std::map<int, int> redirections;
+	
+	for (auto it = connections.begin(); it != connections.end();) {
+		auto conn = *it;
+		
+		int realConnFirst = conn.first;
+		int realConnSecond = conn.second;
+		
+		while (redirections.find(realConnFirst) != redirections.end()) {
+			if (realConnFirst <= redirections[realConnFirst])
+			break;
+			realConnFirst = redirections[realConnFirst];
+		}
+		while (redirections.find(realConnSecond) != redirections.end()) {
+			if (realConnSecond <= redirections[realConnSecond])
+			break;
+			realConnSecond = redirections[realConnSecond];
+		}
+		
+		if (realConnSecond == realConnFirst) {
+			it = connections.erase(it);
+			continue;
+		}
+		if (realConnSecond < realConnFirst)
+		std::swap(realConnFirst, realConnSecond);
+		
+		// merging all points this way: conn.first <- conn.second
+		components[realConnFirst]
+		.insert(components[realConnFirst].end(),
+		components[realConnSecond].begin(), components[realConnSecond].end());
+		components.erase(realConnSecond);
+		
+		it = connections.erase(it);
+		
+		redirections[realConnSecond] = realConnFirst;
+	}
+	
+	label = 1;
+	
+	return components;
+}
+
+std::map<int, Points> LeaveOnlyHullsParallel(
+std::map<int, Points>* components, int M, int N) {
+	std::map<int, Points> hulls;
+	
+	componentsOfThreads.clear();
+	
+	// Collecting all keys of a map
+	std::vector<int> labels((*components).size());
+	for (auto it = (*components).begin(); it != (*components).end(); it++) {
+		labels.push_back(it->first);
+	}
+	
+	// Then using paralellism by connected components
+	#pragma omp parallel
+	#pragma omp single
+	componentsOfThreads.resize(omp_get_num_threads());
+	
+	#pragma omp for
+	for (int i = 0; i < labels.size(); i++) {
+		componentsOfThreads[omp_get_thread_num()][labels[i]]
+		= GrahamScan(&(*components)[labels[i]]);
+	}
+	
+	for (auto componentsOfSomeThread : componentsOfThreads) {
+		hulls.insert(componentsOfSomeThread.begin(), componentsOfSomeThread.end());
+	}
+	componentsOfThreads.clear();
+	
+	return hulls;
+}
+	\end{lstlisting}
+	\newpage
+	
+	\subsection{TBB: main.cpp}
+	\begin{lstlisting}
+// Copyright 2023 Churkin Alexander
+#include <gtest/gtest.h>
+#include <tbb/tbb.h>
+#include <vector>
+#include "./convhulls_bin.h"
+
+void CheckImages(int* imageOrig, int* imagePar, int* imageSeq, int M, int N,
+bool compareWithOriginal) {
+	std::map<int, int> bijectionMap;
+	bijectionMap[0] = 0;
+	
+	for (int y = 0; y < M; y++) {
+		for (int x = 0; x < N; x++) {
+			int pOrig = imageOrig[y * N + x];
+			int p1 = imagePar[y * N + x];
+			int p2 = imageSeq[y * N + x];
+			
+			// checks that both processed images keep only original pixels
+			if (compareWithOriginal) {
+				EXPECT_FALSE((p1 == 0 && pOrig != 0) || (p1 != 0 && pOrig == 0));
+			}
+			
+			// checking bijection
+			if (bijectionMap.find(p1) == bijectionMap.end()) {
+				bijectionMap[p1] = p2;
+			} else {
+				EXPECT_EQ(p2, bijectionMap[p1]);
+			}
+		}
+	}
+}
+
+
+void RunRandomImageTest(int M, int N) {
+	std::vector<int> imageOrig = GetRandomBinImage(M, N);
+	std::vector<int> imagePar(imageOrig);
+	std::vector<int> imageSeq(imageOrig);
+	
+	tbb::tick_count t1Par, t2Par, t1Seq, t2Seq;
+	double tParTotal, tSeqTotal;
+	
+	// std::cout << "Original image:\n";
+	// PrintImage(&imageOrig[0], M, N);
+	
+	t1Par = tbb::tick_count::now();
+	auto componentsPar = MarkComponentsParallel(&imagePar[0], M, N);
+	t2Par = tbb::tick_count::now();
+	
+	t1Seq = tbb::tick_count::now();
+	auto componentsSeq = MarkComponents(&imageSeq[0], M, N);
+	t2Seq = tbb::tick_count::now();
+	
+	auto t = t2Par - t1Par;
+	
+	tParTotal = (t2Par - t1Par).seconds();
+	tSeqTotal = (t2Seq - t1Seq).seconds();
+	
+	RedrawImageFromComponents(&imagePar[0], componentsPar, M, N);
+	RedrawImageFromComponents(&imageSeq[0], componentsSeq, M, N);
+	
+	// Check 1: checking that after labelling components original pixels saved
+	// and we have bijection between components of both processed images
+	CheckImages(&imageOrig[0], &imagePar[0], &imageSeq[0], M, N, true);
+	
+	t1Par = tbb::tick_count::now();
+	componentsPar = LeaveOnlyHulls(&componentsPar, M, N);
+	t2Par = tbb::tick_count::now();
+	
+	t1Seq = tbb::tick_count::now();
+	componentsSeq = LeaveOnlyHulls(&componentsSeq, M, N);
+	t2Seq = tbb::tick_count::now();
+	
+	tParTotal += (t2Par - t1Par).seconds();
+	tSeqTotal += (t2Seq - t1Seq).seconds();
+	
+	RedrawImageFromComponents(&imagePar[0], componentsPar, M, N);
+	RedrawImageFromComponents(&imageSeq[0], componentsSeq, M, N);
+	
+	// Check 2: checking that after Graham convex hulls search
+	// we have bijection between components of both processed images
+	CheckImages(&imageOrig[0], &imagePar[0], &imageSeq[0], M, N, false);
+	
+	// std::cout << "Parallel processed result:\n";
+	// PrintImage(&imagePar[0], M, N);
+	
+	// std::cout << "Sequential processed result:\n";
+	// PrintImage(&imageSeq[0], M, N);
+	
+	/* std::cout << "Duration parallel: " << tParTotal << "\n";
+	std::cout << "Duration sequential: " << tSeqTotal << "\n"; */
+}
+
+TEST(ConvHullsBin_OpenMP, Test_1_Can_Get_Hulls_10X10) {
+	const int M = 10, N = 10;
+	std::vector<int> image({
+		0, 1, 0, 0, 0, 1, 1, 1, 0, 0,
+		1, 1, 0, 0, 1, 1, 1, 1, 0, 0,
+		1, 1, 0, 1, 1, 1, 1, 1, 0, 0,
+		1, 1, 0, 1, 0, 0, 1, 1, 0, 1,
+		1, 1, 0, 0, 0, 0, 1, 1, 0, 1,
+		1, 1, 0, 0, 0, 0, 1, 1, 0, 1,
+		1, 1, 0, 0, 0, 0, 1, 1, 0, 1,
+		1, 1, 0, 0, 0, 0, 1, 1, 0, 1,
+		1, 1, 0, 0, 0, 0, 1, 1, 0, 0,
+		1, 1, 0, 0, 0, 0, 1, 1, 0, 0,
+	});
+	
+	auto components = MarkComponentsParallel(&image[0], M, N);
+	components = LeaveOnlyHulls(&components, M, N);
+	RedrawImageFromComponents(&image[0], components, M, N);
+	
+	std::vector<int> rightResult({
+		0, 2, 0, 0, 0, 3, 0, 3, 0, 0,
+		2, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 3, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 3, 0, 0, 0, 0, 0, 4,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		2, 2, 0, 0, 0, 0, 3, 3, 0, 0,
+	});
+	
+	CheckImages(&image[0], &image[0], &rightResult[0], M, N, false);
+}
+
+TEST(ConvHullsBin_OpenMP, Test_2_EmptyImage_10X10) {
+	const int M = 10, N = 10;
+	std::vector<int> image({
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	});
+	
+	auto components = MarkComponentsParallel(&image[0], M, N);
+	components = LeaveOnlyHulls(&components, M, N);
+	
+	EXPECT_EQ(components.size(), 0);
+}
+
+TEST(ConvHullsBin_OpenMP, Test_3_RandomImage_10X10) {
+	RunRandomImageTest(10, 10);
+}
+
+TEST(ConvHullsBin_OpenMP, Test_4_RandomImage_20X10) {
+	RunRandomImageTest(20, 10);
+}
+
+TEST(ConvHullsBin_OpenMP, Test_5_RandomImage_40X40) {
+	RunRandomImageTest(40, 40);
+}
+
+/* TEST(ConvHullsBin_OpenMP, Test_6_RandomImage_1500X1500) {
+	// Note that recreating images from info about connected components
+	// also takes time,
+	// and this time was not counted in tests
+	RunRandomImageTest(1500, 1500);
+} */
+
+int main(int argc, char **argv) {
+	::testing::InitGoogleTest(&argc, argv);
+	return RUN_ALL_TESTS();
+}
+	\end{lstlisting}
+	\newpage
+	
+	\subsection{TBB: convhulls\_bin.h}
+	\begin{lstlisting}
+// Copyright 2023 Churkin Alexander
+#ifndef MODULES_TASK_3_CHURKIN_A_CONVHULLS_BIN_CONVHULLS_BIN_H_
+#define MODULES_TASK_3_CHURKIN_A_CONVHULLS_BIN_CONVHULLS_BIN_H_
+
+#include <vector>
+#include <map>
+#include <utility>
+
+typedef std::vector<std::pair<int, int>> Points;
+
+// .......... Common functions ..........................
+std::vector<int> GetRandomBinImage(int M, int N);
+void PrintImage(int* image, int M, int N);
+
+bool isCoordinatesInImage(int x, int y, int M, int N);
+double rotate(const std::pair<int, int>& p1,
+const std::pair<int, int>& p2,
+const std::pair<int, int>& p3);
+Points GrahamScan(Points* points);
+
+// Helpful function to compare that everything is ok
+void RedrawImageFromComponents(int* image, const std::map<int, Points>& components, int M, int N);
+// ......................................................
+
+// .......... Functions for SEQUENTIAL algorighm ..........
+void BFS(int* image, int M, int N, int yStart, int xStart,
+int label);
+std::map<int, Points> MarkComponents(int* image, int M, int N);
+std::map<int, Points> LeaveOnlyHulls(
+std::map<int, Points>* components, int M, int N);
+// ......................................................
+
+// .......... Functions for PARALLEL algorighm ..........
+bool isCoordinatesInBounds(int x, int y, int imgYStart, int imgYEnd, int N);
+
+void BFSParallel(int* image, int imgYStart, int imgYEnd, int N, int yStart, int xStart,
+int label, size_t iterNumber);
+
+void MarkComponentsOfPart(int* image, int imgYStart, int imgYEnd, int N, size_t iterNumber);
+std::map<int, Points> MarkComponentsParallel(int* image, int M, int N);
+
+std::map<int, Points> LeaveOnlyHullsParallel(
+std::map<int, Points>* components, int M, int N);
+// ......................................................
+
+#endif  // MODULES_TASK_3_CHURKIN_A_CONVHULLS_BIN_CONVHULLS_BIN_H_
+	\end{lstlisting}
+	\newpage
+	
+	\subsection{TBB: convhulls\_bin.cpp}
+	\begin{lstlisting}
+// Copyright 2023 Churkin Alexander
+#include <tbb/tbb.h>
+#include <vector>
+#include <utility>
+#include <random>
+#include <iostream>
+#include <map>
+#include <set>
+#include <queue>
+#include <algorithm>
+#include <string>
+#include "../../../modules/task_3/churkin_a_convhulls_bin/convhulls_bin.h"
+
+// 1. Generates random binary image with height M and width N
+std::vector<int> GetRandomBinImage(int M, int N) {
+	std::default_random_engine rnd;
+	std::uniform_int_distribution<> dist(1, 10);
+	
+	std::vector<int> image(M * N);
+	
+	for (size_t i = 0; i < M; i++)
+	for (size_t j = 0; j < N; j++) {
+		int number = dist(rnd);
+		if (number <= 4) {
+			image[i * N + j] = 1;
+		} else {
+			image[i * N + j] = 0;
+		}
+	}
+	
+	return image;
+}
+
+void PrintImage(int* image, int M, int N) {
+	for (int i = 0; i < M; i++) {
+		for (int j = 0; j < N; j++) std::cout << image[i * N + j] << " ";
+		std::cout << '\n';
+	}
+}
+
+bool isCoordinatesInImage(int x, int y, int M, int N) {
+	return x >= 0 && x < N && y >= 0 && y < M;
+}
+
+double rotate(const std::pair<int, int>& p1,
+const std::pair<int, int>& p2,
+const std::pair<int, int>& p3) {
+	return (p2.first - p1.first) * (p3.second - p2.second) -
+	(p2.second - p1.second) * (p3.first - p2.first);
+}
+
+Points GrahamScan(Points* points) {
+	if ((*points).size() <= 2) return (*points);
+	
+	Points result;
+	
+	// Finding minimal point - point with minimum x and y (left bottom point)
+	std::pair<int, int> minPoint = (*points)[0];
+	size_t minPointIdx = 0;
+	
+	for (size_t i = 1; i < (*points).size(); i++) {
+		if ((*points)[i].first < minPoint.first ||
+		((*points)[i].first == minPoint.first &&
+		(*points)[i].second < minPoint.second)) {
+			minPoint = (*points)[i];
+			minPointIdx = i;
+		}
+	}
+	
+	// Removing minimal point from our points
+	std::swap((*points)[minPointIdx], (*points)[(*points).size() - 1]);
+	(*points).pop_back();
+	
+	// Sorting points by our custom criteria
+	std::sort((*points).begin(), (*points).end(),
+	[minPoint](const std::pair<int, int>& p1,
+	const std::pair<int, int>& p2) {
+		// Vector v1 coordinates
+		double v1x = p1.first - minPoint.first;
+		double v1y = p1.second - minPoint.second;
+		// Vector v2 coordinates
+		double v2x = p2.first - minPoint.first;
+		double v2y = p2.second - minPoint.second;
+		
+		// Performing comparison by det
+		double det = v1x * v2y - v1y * v2x;
+		
+		if (det > 0) {
+			// v1 < v2 by det
+			return true;
+		} else if (det == 0) {
+			// v1 == v2 by det. Let's compare by length of vectors
+			double len_v1 = sqrt(pow(v1x, 2) + pow(v1y, 2));
+			double len_v2 = sqrt(pow(v2x, 2) + pow(v2y, 2));
+			
+			return len_v1 < len_v2;
+		} else {
+			// v1 > v2 by det
+			return false;
+		}
+	});
+	
+	// Then we do Graham scan
+	// minPoint and points[0]
+	// are the first points of our convex hull
+	result.push_back(minPoint), result.push_back((*points)[0]);
+	
+	for (size_t i = 1; i < (*points).size(); i++) {
+		// p1
+		std::pair<int, int> p1 = result[result.size() - 2];
+		// p2
+		std::pair<int, int> p2 = result[result.size() - 1];
+		// p3
+		std::pair<int, int> p3 = (*points)[i];
+		
+		double rot = rotate(p1, p2, p3);
+		// p1, p2, p3 on one line -> replacing p2 with p3
+		if (rot == 0) {
+			result[result.size() - 1] = p3;
+		} else if (rot < 0) {
+			// While p1, p2, p3 form right turn -> exclude p2
+			while (rotate(result[result.size() - 2], result[result.size() - 1],
+			p3) <= 0)
+			result.pop_back();
+			result.push_back(p3);
+		} else {
+			// left turns are ok - just adding p3 to our result
+			result.push_back(p3);
+		}
+	}
+	
+	return result;
+}
+
+void RedrawImageFromComponents(int* image, const std::map<int, Points>& components,
+int M, int N) {
+	for (int i = 0; i < M * N; i++)
+	image[i] = 0;
+	
+	int labelCounter = 1;
+	for (auto it = components.begin(); it != components.end(); it++, labelCounter++) {
+		for (int i = 0; i < it->second.size(); i++) {
+			image[(it->second[i].second) * N + (it->second[i].first)] = labelCounter;
+		}
+	}
+}
+
+/* ............................. SEQUENTIAL ............................. */
+
+std::map<int, Points> allComponentsSeq;
+
+void BFS(int* image, int M, int N, int yStart, int xStart,
+int label) {
+	std::queue<std::pair<int, int>> q;
+	q.push(std::make_pair(xStart, yStart));
+	while (!q.empty()) {
+		int x = q.front().first;
+		int y = q.front().second;
+		q.pop();
+		if (x >= 0 && y >= 0 && y < M && x < N && image[y * N + x] == 1) {
+			image[y * N + x] = label;
+			allComponentsSeq[label].push_back(std::make_pair(x, y));
+			
+			q.push(std::make_pair(x - 1, y - 1));  // bottom left
+			q.push(std::make_pair(x - 1, y));      // left
+			q.push(std::make_pair(x - 1, y + 1));  // top left
+			q.push(std::make_pair(x, y + 1));      // top
+			q.push(std::make_pair(x + 1, y + 1));  // top right
+			q.push(std::make_pair(x + 1, y));      // right
+			q.push(std::make_pair(x, y - 1));      // bottom
+			q.push(std::make_pair(x + 1, y - 1));  // bottom right
+		}
+	}
+}
+
+// 2. Marks components on image (labeling starts from 2)
+std::map<int, Points> MarkComponents(int* image, int M, int N) {
+	allComponentsSeq.clear();
+	
+	int label = 2;
+	// i is y coordinate
+	for (int i = 0; i < M; i++)
+	// j is x coordinate
+	for (int j = 0; j < N; j++) {
+		if (image[i * N + j] == 1)
+		BFS(image, M, N, i, j, label), label++;
+	}
+	return allComponentsSeq;
+}
+
+// Here we should launch Graham for every component to get its convex hull
+std::map<int, Points> LeaveOnlyHulls(
+std::map<int, Points>* components, int M, int N) {
+	
+	// Then, we should launch Graham for every component to get its convex hull
+	std::map<int, Points> hulls;
+	
+	for (auto& kv : (*components)) {
+		int label = kv.first;
+		auto& points = kv.second;
+		hulls[label] = GrahamScan(&points);
+	}
+	
+	return hulls;
+}
+
+/* .............................. PARALLEL .............................. */
+
+bool isCoordinatesInBounds(int x, int y, int imgYStart, int imgYEnd, int N) {
+	return x >= 0 && x < N && y >= imgYStart && y < imgYEnd;
+}
+
+// Threads store their connected components in componentsOfBlocks[blockNumber]
+std::vector<std::map<int, Points>> componentsOfBlocks;
+
+struct CompFunctor {
+	int* image;
+	int M, N, tasksCount, piecesDefault, piecesLeft;
+	
+	CompFunctor(int* image, int M, int N,
+	int tasksCount, int piecesDefault, int piecesLeft) {
+		this->image = image;
+		this->M = M;
+		this->N = N;
+		this->tasksCount = tasksCount;
+		this->piecesDefault = piecesDefault;
+		this->piecesLeft = piecesLeft;
+	}
+	
+	void operator() (const tbb::blocked_range<size_t>& range) const {
+		for (size_t i = range.begin(); i < range.end(); i++) {
+			if (i == tasksCount - 1) {
+				MarkComponentsOfPart(image, i * piecesDefault, (i + 1) * piecesDefault + piecesLeft, N, i);
+			} else {
+				MarkComponentsOfPart(image, i * piecesDefault, (i + 1) * piecesDefault, N, i);
+			}
+		}
+	}
+};
+
+void BFSParallel(int* image, int imgYStart, int imgYEnd, int N, int yStart, int xStart,
+int label, size_t iterNumber) {
+	std::queue<std::pair<int, int>> q;
+	q.push(std::make_pair(xStart, yStart));
+	while (!q.empty()) {
+		int x = q.front().first;
+		int y = q.front().second;
+		
+		q.pop();
+		if (isCoordinatesInBounds(x, y, imgYStart, imgYEnd, N) && image[y * N + x] == 1) {
+			// assigning label
+			image[y * N + x] = label;
+			
+			componentsOfBlocks[iterNumber][label].push_back(std::make_pair(x, y));
+			
+			q.push(std::make_pair(x - 1, y - 1));  // bottom left
+			q.push(std::make_pair(x - 1, y));      // left
+			q.push(std::make_pair(x - 1, y + 1));  // top left
+			q.push(std::make_pair(x, y + 1));      // top
+			q.push(std::make_pair(x + 1, y + 1));  // top right
+			q.push(std::make_pair(x + 1, y));      // right
+			q.push(std::make_pair(x, y - 1));      // bottom
+			q.push(std::make_pair(x + 1, y - 1));  // bottom right
+		}
+	}
+}
+
+int label;
+tbb::spin_mutex labelMutex;
+
+void MarkComponentsOfPart(int* image, int imgYStart, int imgYEnd, int N, size_t iterNumber) {
+	// i is y coordinate
+	for (int i = imgYStart; i <= imgYEnd; i++)
+	// j is x coordinate
+	for (int j = 0; j < N; j++) {
+		if (image[i * N + j] == 1) {
+			int lTemp;
+			labelMutex.lock();
+			lTemp = ++label;
+			labelMutex.unlock();
+			BFSParallel(image, imgYStart, imgYEnd, N, i, j, lTemp, iterNumber);
+		}
+	}
+}
+
+std::map<int, Points> MarkComponentsParallel(int* image, int M, int N) {
+	// We will process image by blocks having height = 100 pixels
+	int defaultBlockHeight = 100;
+	int tasksCount;
+	int piecesDefault, piecesLeft;
+	if (M < defaultBlockHeight)
+	tasksCount = 1;
+	else
+	tasksCount = M / defaultBlockHeight;
+	
+	piecesDefault = M / tasksCount;
+	piecesLeft = M % tasksCount;
+	
+	componentsOfBlocks.resize(tasksCount);
+	label = 1;
+	
+	CompFunctor functor(image, M, N, tasksCount, piecesDefault, piecesLeft);
+	tbb::parallel_for(tbb::blocked_range<size_t>(0, tasksCount), functor);
+	
+	// There we will find parts that have connections between each other
+	std::set<std::pair<int, int>> connections;
+	
+	for (int k = 0; k < tasksCount - 1; k++) {
+		int y = ((k + 1) * piecesDefault - 1);
+		
+		for (int x = 0; x < N; x++) {
+			if (image[y * N + x] > 0) {
+				if (isCoordinatesInImage((x - 1), (y + 1), M, N) &&
+				image[(y + 1) * N + (x - 1)] > 0) {
+					int arg1 = (std::min)(image[y * N + x], image[(y + 1) * N + (x - 1)]);
+					int arg2 = (std::max)(image[y * N + x], image[(y + 1) * N + (x - 1)]);
+					connections.insert({ arg1, arg2 });
+				}
+				
+				if (isCoordinatesInImage(x, (y + 1), M, N) &&
+				image[(y + 1) * N + x] > 0) {
+					int arg1 = (std::min)(image[y * N + x], image[(y + 1) * N + x]);
+					int arg2 = (std::max)(image[y * N + x], image[(y + 1) * N + x]);
+					connections.insert({ arg1, arg2 });
+				}
+				
+				if (isCoordinatesInImage((x + 1), (y + 1), M, N) &&
+				image[(y + 1) * N + (x + 1)] > 0) {
+					int arg1 = (std::min)(image[y * N + x], image[(y + 1) * N + (x + 1)]);
+					int arg2 = (std::max)(image[y * N + x], image[(y + 1) * N + (x + 1)]);
+					connections.insert({ arg1, arg2 });
+				}
+			}
+		}
+	}
+	
+	// Let's save our components in one map
+	std::map<int, Points> components;
+	for (auto componentsOfSomeThread : componentsOfBlocks) {
+		components.insert(componentsOfSomeThread.begin(), componentsOfSomeThread.end());
+		componentsOfSomeThread.clear();
+	}
+	componentsOfBlocks.clear();
+	
+	std::map<int, int> redirections;
+	
+	for (auto it = connections.begin(); it != connections.end();) {
+		auto conn = *it;
+		
+		int realConnFirst = conn.first;
+		int realConnSecond = conn.second;
+		
+		while (redirections.find(realConnFirst) != redirections.end()) {
+			if (realConnFirst <= redirections[realConnFirst])
+			break;
+			realConnFirst = redirections[realConnFirst];
+		}
+		while (redirections.find(realConnSecond) != redirections.end()) {
+			if (realConnSecond <= redirections[realConnSecond])
+			break;
+			realConnSecond = redirections[realConnSecond];
+		}
+		
+		if (realConnSecond == realConnFirst) {
+			it = connections.erase(it);
+			continue;
+		}
+		if (realConnSecond < realConnFirst)
+		std::swap(realConnFirst, realConnSecond);
+		
+		// merging all points this way: conn.first <- conn.second
+		components[realConnFirst]
+		.insert(components[realConnFirst].end(),
+		components[realConnSecond].begin(), components[realConnSecond].end());
+		components.erase(realConnSecond);
+		
+		it = connections.erase(it);
+		
+		redirections[realConnSecond] = realConnFirst;
+	}
+	
+	label = 1;
+	
+	return components;
+}
+
+struct HullsFunctor {
+	std::map<int, Points>* components;
+	std::vector<int>* labels;
+	
+	HullsFunctor(std::map<int, Points>* components,
+	std::vector<int>* labels) {
+		this->components = components;
+		this->labels = labels;
+	}
+	
+	void operator() (const tbb::blocked_range<size_t>& range) const {
+		for (size_t i = range.begin(); i < range.end(); i++) {
+			componentsOfBlocks[i][(*labels)[i]]
+			= GrahamScan(&(*components)[(*labels)[i]]);
+		}
+	}
+};
+
+std::map<int, Points> LeaveOnlyHullsParallel(
+std::map<int, Points>* components, int M, int N) {
+	std::map<int, Points> hulls;
+	
+	componentsOfBlocks.clear();
+	componentsOfBlocks.resize((*components).size());
+	
+	// Collecting all keys of a map
+	std::vector<int> labels((*components).size());
+	for (auto it = (*components).begin(); it != (*components).end(); it++) {
+		labels.push_back(it->first);
+	}
+	
+	// Then using paralellism by connected components
+	HullsFunctor functor(components, &labels);
+	tbb::parallel_for(tbb::blocked_range<size_t>(0, labels.size()), functor);
+	
+	for (auto componentsOfSomeThread : componentsOfBlocks) {
+		hulls.insert(componentsOfSomeThread.begin(), componentsOfSomeThread.end());
+	}
+	componentsOfBlocks.clear();
+	
+	return hulls;
+}
+	\end{lstlisting}
+	\newpage
+\end{document}
