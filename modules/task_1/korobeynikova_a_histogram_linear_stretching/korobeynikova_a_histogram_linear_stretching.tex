@@ -1,0 +1,513 @@
+\documentclass[14pt, russian]{extarticle}
+\usepackage[utf8]{inputenc}
+\usepackage[T2A]{fontenc}
+\usepackage{babel}
+\usepackage[a4paper,
+left=2cm,
+right=2cm,
+top=2cm,
+bottom=2cm]{geometry}
+\usepackage{color}
+\usepackage{mathtools}
+\usepackage{listings}
+\usepackage{graphicx}
+\usepackage{tocloft}
+\usepackage{indentfirst}
+\usepackage{enumitem}
+
+\setlength{\parindent}{0.8cm}
+\setlength{\parskip}{0.4cm}
+\renewcommand{\contentsname}{}
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=none,
+	language=C++,
+	aboveskip=3mm,
+	belowskip=3mm,
+	showstringspaces=false,
+	columns=flexible,
+	basicstyle={\small\ttfamily},
+	numbers=none,
+	numberstyle=\tiny\color{gray},
+	keywordstyle=\color{blue},
+	commentstyle=\color{dkgreen},
+	stringstyle=\color{mauve},
+	breaklines=true,
+	breakatwhitespace=true,
+	tabsize=4
+}
+
+\title{}
+\author{}
+\date{}
+
+\begin{document}
+	\begin{titlepage}
+		\begin{center}
+			{\bfseries МИНИСТЕРСТВО НАУКИ И ВЫСШЕГО ОБРАЗОВАНИЯ \\
+				РОССИЙСКОЙ ФЕДЕРАЦИИ}
+			\\
+			Федеральное государственное автономное образовательное учреждение высшего образования 
+			\\
+			{\bfseries «Национальный исследовательский Нижегородский государственный университет им. Н.И. Лобачевского»\\(ННГУ)
+				\\Институт информационных технологий, математики и механики} \\
+		\end{center}
+		
+		\vspace{8em}
+		
+		\begin{center}
+			ОТЧЁТ \\ по лабораторной работе \\
+			«Повышение контраста полутонового изображения посредством линейной растяжки гистограммы.»
+		\end{center}
+		
+		\vspace{5em}
+		
+		
+		\begin{flushright}
+			{\bfseries Выполнила:} студентка группы 382008-1\\Коробейникова А.Д.\\ 
+			{\bfseries Проверил:} младший научный сотрудник\\Нестеров А.Ю.
+		\end{flushright}
+		
+		
+		\vspace{\fill}
+		
+		\begin{center}
+			Нижний Новгород\\2023
+		\end{center}
+		
+	\end{titlepage}
+	
+	% Содержание
+	\tableofcontents
+	\thispagestyle{empty}
+	\newpage
+	
+	\pagestyle{plain}
+	\setcounter{page}{3}
+
+	% Введение
+	\section{Введение}
+    Редактирование изображений (лат. redactus — приведённый в порядок) — изменение фотографий (изображений) классическими или цифровыми методами. Его целями являются коррекция дефектов, подготовка к публикации, решение творческих задач. Повышение контраста полутонового изображения посредством линейной растяжки гистограммы - одна из задач редактирования.
+
+    Полутоновое изображение — это изображение, имеющее множество значений тона вместо различных оттенков. Возможные полутона называются уровнями серого (англ. gray scale), независимо от того, полутона какого цвета передаются. Уровни серого  отличаются по яркости: количество возможных полутонов отображается глубиной цвета — количеством бит на пиксел (англ. bit per pixel, bpp). Чаще всего используется глубина цвета в 8 бит, или 1 байт, при которой каждый пиксел изображения может принимать 256 значений яркости: от 0 до 255.
+    
+    Гистограмма – это график распределения интенсивности в изображении. На горизонтальной оси - шкала яркостей тонов от белого до черного, на вертикальной оси - число пикселей заданной яркости. С помощью изменений гистограммы можно отредактировать изображение. Например, растяжение гистограммы предназначено для регулировки контраста. Смысл растяжения гистограммы состоит в увеличении разницы между передним и задним оттенками серого для усиления контраста.
+
+	В данной работе рассмотрены последовательная и две параллельные (при помощи OpenMP и TBB) реализации задачи повышения контраста полутонового изображения посредством линейной растяжки гистограммы. По результатам работы мной также были сделаны выводы касательно скорости работы различных реализаций.
+	\newpage
+
+	\section{Постановка задачи}
+	Необходимо реализовать три варианта программы для решения задачи повышения контраста полутонового изображения посредством линейной растяжки гистограммы на языке C$++$: 
+    \begin{itemize}
+    \item{последовательный вариант,}
+    \item{с использованием библиотеки OpenMP,}
+    \item{c использованием библиотеки TBB.}
+    \end{itemize}
+	
+	Результатом работы в каждом из вариантов должно быть новое изображение, гистограмма которого была линейно растянута.
+	
+	При написании параллельных реализаций с использованием OpenMP и TBB необходимо учесть тот факт, что программа будет запущена на различном количестве потоков. Для написания автоматических unit-тестов следует использовать фреймворк Google Test. Требуется реализовать не менее пяти различных тестов. Код для каждой реализации должен быть распределён по следующим четырём файлам: main.cpp, histogram\_linear\_stretching.h, histogram\_linear\_stretching.cpp и CMakeLists.txt.
+	
+	Необходимо также сделать выводы по результатам работы всех трёх реализаций.
+	
+	\newpage
+
+	\section{Описание алгоритма}
+	\noindent\textbf{Входные данные:}\\
+	\indent  Изображение представлено пикселями, которые, в свою очередь, характеризуются числовым значением от 0 до 255 - интенсивностью. Для удобства работы с данными полутоновое изображение записано в виде одномерного вектора image размера $ M \times N $, ($ M $ – высота изображения, $ N $ – ширина).
+	
+	\noindent\textbf{Алгоритм:}\\
+	\indent Для начала необходимо найти значения максимальной $y_{max}$ и минимальной $y_{min}$ интенсивности среди всех пикселей изображения. Затем присвоим каждому пикселю новое значение по формуле:
+    \begin{center}
+    $ y = (y - y_{min}) * \frac{(255 - 0)}{y_{max} - y_{min}}$,\\
+    \end{center}
+    \indent где $y$ - значение интенсивности пикселя.
+    
+	\noindent\textbf{Результат:}\\
+	\indent Результатом работы такого несложного алгоритма является изображение, равное по размерам исходному. Значение пикселей этого изображения имеют изменённое по формуле значение. Нетрудно заметить также, что если в изображении были представлены интенсивности 255 и 0, исходное и результирующее изображения будут совпадать. \newpage
+	
+	\section{Описание схемы распараллеливания}
+	В данном алгоритме распараллеливанию поддаётся поиск максимума и минимума интенсивности пикселей, а также вычисление новых значений пикселей.
+
+	\noindent\textbf{Поиск максимума и минимума интенсивности}\\
+	\indent Чтобы распараллелить поиск максимума и минимума нужно разбить изображение на несколько групп подряд идущих пикселей, в каждой из которых будет параллельно осуществлён поиск максимума и минимума. При этом каждый поток будет обрабатывать одну или несколько таких групп, а полученные значения записывать в общий массив данных по индексу, совпадающему с собственным номером потока.\\
+	\indent После этого шага один из потоков выполнит поиск в полученном небольшом массиве (его размер будет равен количеству потоков) результирующих максимума и минимума.
+	
+	\noindent\textbf{Линейное растяжение}\\
+	\indent После получения значений максимума и минимума на предыдущем этапе, можно также параллельно в тех же группах преобразовать значения пикселей. Между всеми потоками распределяются различные части изображений, а после завершения работы каждого потока мы получим результирующее изображение.
+	\newpage
+	
+	\section{Описание OpenMP-версии программы}
+	
+	OpenMP-версия программы предоставляет пользователю библиотеку\\* \emph{histogram\_linear\_stretching.h}. Эта библиотека содержит последовательную и параллельную версию одной и той же функции \emph{linearHistogramStretching}. 
+ 
+    Внутри последовательной версии \textbf{sequentialLinearHistogramStretching} вызывается статическая функция по последовательному поиску максимума и минимума seqFindRange. \textbf{seqFindRange} занимается тем, что в цикле по всему изображению ищет максимум, минимум, складывает их в переменную типа std::pair и возвращает найденные значения. \textbf{sequentialLinearHistogram- Stretching} преобразует в цикле пиксели всего изображения с помощью двух найденных значений.
+
+    Параллельная версия \textbf{parallelLinearHistogramStretching} сначала делает вызов статической функции \textbf{parFindRange} - параллельного поиска максимума и минимума, а потом с помощью директив parallel и for выполняет параллельное преобразование всех пикселей. При этом распределение задач возложено на библиотеку OpenMP, а сам цикл почти ничем не отличается от последовательной версии. Внутри функции \textbf{parFindRange} создаётся вектор из std::pair с длиной, равной количеству потоков, — в него потоки будут складывать найденные значения в ячейку с индексом, равным номеру потока. Затем в параллельной области поток узнаёт свой номер, в цикле, распараллеленным директивой for, ищет максимум и минимум и складирует их в свою ячейку вектора. Вне параллельной области исполняемый поток ищет среди всех найденных значений минимальное и максимальное. Эти два числа возвращаются из функции.
+    
+    В файле main.cpp внутри тестов вызываются последовательная и параллельная версии. Тесты проверяют равенство их возвращаемых значений - изображений, гистограмма которых была линейно растянута последовательным и параллельным алгоритмами.
+	\newpage
+	
+	\section{Описание TBB-версии программы}
+
+    TBB-версия программы также предоставляет пользователю библиотеку\\* \emph{histogram\_linear\_stretching.h}, точно также содержащую последовательную и параллельную версию функции \emph{linearHistogramStretching}.
+
+	Реализация \textbf{sequentialLinearHistogramStretching} и вспомогательной статической функции \textbf{seqFindRange} осталась та же, что и в библиотеке с использованием OpenMP.
+    
+    Статическая функция \textbf{parFindRange} возвращает значение функции \\*tbb::parallel\_reduce. В tbb::parallel\_reduce передаются следующие параметры:
+    \begin{enumerate}
+    \item{tbb::blocked\_range интервал для выполнения редукции из указателей на начало и конец вектора пикселей;}
+    \item{начальное значение - пара из значений 255 и 0 (инициализируют минимум и максимум соответственно);}
+    \item{функтор, аналогичный методу operator(), если бы мной был написан соответствующий класс. Он в свою очередь принимает tbb::blocked\_range интервал для поиска максимума и минимума, а также начальное значение. Возвращает функтор найденные на интервале минимум и максимум в виде std::pair;}
+    \item{функтор, аналогичный методу join(). Он принимает две пары std::pair из минимумов и максимумов и выбирает, какие значения вернуть, а именно минимум из двух минимумов и максимум из двух максимумов.}
+    \end{enumerate}
+    
+    Функция \textbf{parallelLinearHistogramStretching} совершает внутри себя вызов функции \textbf{parFindRange} и параллельное преобразование пикселей с помощью tbb::parallel\_for. Этой функции передаются:
+    \begin{enumerate}
+    \item{tbb::blocked\_range интервал для цикла for, два числа - 0 и размер изображения.}
+    \item{функтор, принимающий tbb::blocked\_range и выполняющий цикл по переданному интервалу. Внутри цикла происходит преобразование всех пикселей изображения из интервала с помощью ранее найденных максимума и минимума интенсивностей.}
+    \end{enumerate}
+
+    В файле main.cpp внутри тестов вызываются последовательная и параллельная версии. Тесты проверяют равенство их возвращаемых значений - изображений, гистограмма которых была линейно растянута последовательным и параллельным алгоритмами.
+	\newpage
+	
+	\section{Результаты экспериментов}
+	Работа различных реализаций была проверена при помощи следующих пяти автоматических тестов:
+	\begin{enumerate}[topsep=0pt, labelwidth=!, labelindent=0pt]
+		\item Заданное изображение $1 \times 1$.
+		\item Заданное изображение $2 \times 2$.
+		\item Заданное изображение $3 \times 3$.
+		\item Заданное изображение $4 \times 4$.
+		\item Заданное изображение $5 \times 5$.
+	\end{enumerate}
+	
+	\indentДля того чтобы сделать вывод об эффективности различных реализаций, я дополнительно протестировала функции из всех трёх библиотек на больших изображениях. Параллельные версии были запущены на восьми потоках. Время выполнения тестов было измерено с помощью OpenMP-функции omp\_get\_wtime() и TBB-функции tick\_count::now(). Время работы функций из различных библиотек отображено в таблице:
+	
+	\begin{table}[ht]
+		\centering
+		\begin{tabular}{| c | c | c | c |}
+			\hline
+			Размер данных(в пикселях) & Последовательная & OpenMP & TBB \\
+			\hline
+			1{.}000{.}000 & 0.0054254  & 0.0425889 & 0.0209339 \\
+			\hline
+			10{.}000{.}000 & 0.0550446 & 0.423036 & 0.135797  \\
+			\hline
+			100{.}000{.}000 & 0.547153 &  4.23658 & 1.34242 \\
+			\hline
+		\end{tabular}
+	\end{table}
+
+	Тестирование подтвердило корректность работы алгоритма на произвольно заданном количестве потоков.
+	\newpage
+	
+	\section{Выводы из результатов}
+	Реализация алгоритма при помощи TBB работает быстрее, чем реализация с OpenMP. Однако они обе на порядок уступают скорости выполнения последовательной версии. Этому есть целый ряд причин. Например, производительность параллельной программы меньше из-за промахов кэша. Для увеличения производительности кода необходимо, чтобы потоки обращались к одному блоку памяти, который полностью помещается в кэш. Не говоря уже о том, что увеличение времени работы происходит из-за увеличения накладных расходов библиотек, обеспечивающих параллелизм.
+	\newpage
+	
+	\section{Заключение}
+	Данная работа позволила мне ознакомиться с параллелизмом на уровне потоков, а также рассмотреть интерфейсы библиотек OpenMP и TBB для C$++$.
+	
+	В ходе работы мною были успешно написаны последовательная и две параллельные версии алгоритма. В результате замеров удалось выяснить: последовательная реализация на порядок быстрее параллельных.
+
+	\newpage
+	
+	\section{Литература}
+	\begin{enumerate}
+		\item ru.wikipedia.org: сайт – URL: https://ru.wikipedia.org/wiki/Полутоновое\\*\_изображение (дата обращения: 13.05.2023). —  Текст: электронный.
+		\item www.graph.unn.ru: сайт – URL: http://www.graph.unn.ru/rus/materials\\*/CG/CG03\_ImageProcessing.pdf (дата обращения: 13.05.2023). —  Текст: электронный.
+	\end{enumerate}
+	\newpage
+	
+	\section{Приложение}
+	
+	\subsection{OpenMP: main.cpp}
+	\begin{lstlisting}
+// Copyright 2023 Korobeynikova Alice
+#include <gtest/gtest.h>
+
+#include "./histogram_linear_stretching.h"
+
+TEST(Parallel_Operations_OpenMP, Test_Image_1) {
+  const Image example({255});
+  Image seq_image(example), par_image(example);
+  sequentialLinearHistogramStretching(&seq_image);
+  parallelLinearHistogramStretching(&par_image);
+  ASSERT_EQ(seq_image, par_image);
+}
+
+TEST(Parallel_Operations_OpenMP, Test_Image_4) {
+  const Image example({128, 34, 65, 79});
+  Image seq_image(example), par_image(example);
+  sequentialLinearHistogramStretching(&seq_image);
+  parallelLinearHistogramStretching(&par_image);
+  ASSERT_EQ(seq_image, par_image);
+}
+
+TEST(Parallel_Operations_OpenMP, Test_Image_9) {
+  const Image example({183, 212, 133, 173, 151, 30, 203, 28, 183});
+  Image seq_image(example), par_image(example);
+  sequentialLinearHistogramStretching(&seq_image);
+  parallelLinearHistogramStretching(&par_image);
+  ASSERT_EQ(seq_image, par_image);
+}
+
+TEST(Parallel_Operations_OpenMP, Test_Image_16) {
+  const Image example({196, 40, 199, 105, 160, 158, 82, 165, 205, 107, 232, 240,
+                       68, 223, 152, 86});
+  Image seq_image(example), par_image(example);
+  sequentialLinearHistogramStretching(&seq_image);
+  parallelLinearHistogramStretching(&par_image);
+  ASSERT_EQ(seq_image, par_image);
+}
+
+TEST(Parallel_Operations_OpenMP, Test_Image_25) {
+  const Image example({15,  202, 160, 34,  207, 147, 22,  156, 243,
+                       97,  205, 222, 235, 3,   3,   151, 108, 244,
+                       201, 226, 188, 127, 237, 177, 103});
+  Image seq_image(example), par_image(example);
+  sequentialLinearHistogramStretching(&seq_image);
+  parallelLinearHistogramStretching(&par_image);
+  ASSERT_EQ(seq_image, par_image);
+}
+
+int main(int argc, char **argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
+}
+
+	\end{lstlisting}
+	\newpage
+	\subsection{OpenMP: histogram\_linear\_stretching.h
+}
+	\begin{lstlisting}
+// Copyright 2023 Korobeynikova Alice
+#pragma once
+#include <vector>
+
+typedef unsigned char Color;
+typedef std::vector<Color> Image;
+
+void sequentialLinearHistogramStretching(Image* image_ptr);
+void parallelLinearHistogramStretching(Image* image_ptr);
+
+	\end{lstlisting}
+	\newpage
+	\subsection{OpenMP: histogram\_linear\_stretching.cpp}
+	\begin{lstlisting}
+// Copyright 2023 Korobeynikova Alice
+#include "../../../modules/task_2/korobeynikova_a_histogram_linear_stretch ing/histogram_linear_stretching.h"
+
+#include <omp.h>
+
+#include <iostream>
+
+constexpr int RANGEMIN = 0;
+constexpr int RANGEMAX = 255;
+
+static std::pair<Color, Color> parFindRange(const Image& image) {
+  int num_threads = 0;
+#pragma omp parallel
+  { num_threads = omp_get_num_threads(); }
+  std::vector<std::pair<Color, Color>> ranges(num_threads,
+                                              {RANGEMAX, RANGEMIN});
+#pragma omp parallel
+  {
+    int thread_id = omp_get_thread_num();
+#pragma omp for
+    for (int i = 0; i < image.size(); ++i) {
+      ranges[thread_id].first = std::min(image[i], ranges[thread_id].first);
+      ranges[thread_id].second = std::max(image[i], ranges[thread_id].second);
+    }
+  }
+  std::pair<Color, Color> range({RANGEMAX, RANGEMIN});
+  for (auto elem : ranges) {
+    range.first = std::min(elem.first, range.first);
+    range.second = std::max(elem.second, range.second);
+  }
+  return range;
+}
+
+static std::pair<Color, Color> seqFindRange(const Image& image) {
+  std::pair<Color, Color> range({RANGEMAX, RANGEMIN});
+  for (int i = 0; i < image.size(); ++i) {
+    range.first = std::min(image[i], range.first);
+    range.second = std::max(image[i], range.second);
+  }
+  return range;
+}
+
+void sequentialLinearHistogramStretching(Image* image_ptr) {
+  Image& image = *image_ptr;
+  std::pair<Color, Color> range = seqFindRange(image);
+  if (range.second != range.first) {
+    for (auto& pixel : image) {
+      pixel = (pixel - range.first) * (RANGEMAX - RANGEMIN) /
+              (range.second - range.first);
+    }
+  }
+}
+
+void parallelLinearHistogramStretching(Image* image_ptr) {
+  Image& image = *image_ptr;
+  std::pair<Color, Color> range = parFindRange(image);
+  if (range.second != range.first) {
+#pragma omp parallel for
+    for (int i = 0; i < image.size(); ++i) {
+      image[i] = (image[i] - range.first) * (RANGEMAX - RANGEMIN) /
+                 (range.second - range.first);
+    }
+  }
+}
+	\end{lstlisting}
+	\newpage
+	
+	\subsection{TBB: main.cpp}
+	\begin{lstlisting}
+// Copyright 2023 Korobeynikova Alice
+#include <gtest/gtest.h>
+
+#include "./histogram_linear_stretching.h"
+
+TEST(Parallel_Operations_TBB, Test_Image_1) {
+  const Image example({255});
+  Image seq_image(example), par_image(example);
+  sequentialLinearHistogramStretching(&seq_image);
+  parallelLinearHistogramStretching(&par_image);
+  ASSERT_EQ(seq_image, par_image);
+}
+
+TEST(Parallel_Operations_TBB, Test_Image_4) {
+  const Image example({128, 34, 65, 79});
+  Image seq_image(example), par_image(example);
+  sequentialLinearHistogramStretching(&seq_image);
+  parallelLinearHistogramStretching(&par_image);
+  ASSERT_EQ(seq_image, par_image);
+}
+
+TEST(Parallel_Operations_TBB, Test_Image_9) {
+  const Image example({183, 212, 133, 173, 151, 30, 203, 28, 183});
+  Image seq_image(example), par_image(example);
+  sequentialLinearHistogramStretching(&seq_image);
+  parallelLinearHistogramStretching(&par_image);
+  ASSERT_EQ(seq_image, par_image);
+}
+
+TEST(Parallel_Operations_TBB, Test_Image_16) {
+  const Image example({196, 40, 199, 105, 160, 158, 82, 165, 205, 107, 232, 240,
+                       68, 223, 152, 86});
+  Image seq_image(example), par_image(example);
+  sequentialLinearHistogramStretching(&seq_image);
+  parallelLinearHistogramStretching(&par_image);
+  ASSERT_EQ(seq_image, par_image);
+}
+
+TEST(Parallel_Operations_TBB, Test_Image_25) {
+  const Image example({15,  202, 160, 34,  207, 147, 22,  156, 243,
+                       97,  205, 222, 235, 3,   3,   151, 108, 244,
+                       201, 226, 188, 127, 237, 177, 103});
+  Image seq_image(example), par_image(example);
+  sequentialLinearHistogramStretching(&seq_image);
+  parallelLinearHistogramStretching(&par_image);
+  ASSERT_EQ(seq_image, par_image);
+}
+
+int main(int argc, char **argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
+}
+	\end{lstlisting}
+	\newpage
+	
+	\subsection{TBB: histogram\_linear\_stretching.h}
+	\begin{lstlisting}
+// Copyright 2023 Korobeynikova Alice
+#pragma once
+#include <vector>
+
+typedef unsigned char Color;
+typedef std::vector<Color> Image;
+
+void sequentialLinearHistogramStretching(Image* image_ptr);
+void parallelLinearHistogramStretching(Image* image_ptr);
+
+	\end{lstlisting}
+	\newpage
+	
+	\subsection{TBB: histogram\_linear\_stretching.cpp}
+	\begin{lstlisting}
+// Copyright 2023 Korobeynikova Alice
+#include "../../../modules/task_3/korobeynikova_a_histogram_linear_stretch ing/histogram_linear_stretching.h"
+
+#include <tbb/blocked_range.h>
+#include <tbb/parallel_for.h>
+#include <tbb/parallel_reduce.h>
+#include <tbb/task_arena.h>
+
+#include <iostream>
+
+constexpr int RANGEMIN = 0;
+constexpr int RANGEMAX = 255;
+
+static std::pair<Color, Color> parFindRange(const Image& image) {
+  auto range = std::make_pair(Color(RANGEMAX), Color(RANGEMIN));
+  return tbb::parallel_reduce(
+      tbb::blocked_range<Image::const_iterator>(
+          image.begin(), image.end()),  // range for searching min & max
+      std::make_pair(Color(RANGEMAX), Color(RANGEMIN)),  // start value
+      [&image](const tbb::blocked_range<Image::const_iterator>&
+                   range,  // operator() implementation
+               std::pair<Color, Color> min_max) {
+        for (auto pixel : range) {
+          min_max.first = std::min(min_max.first, pixel);
+          min_max.second = std::max(min_max.second, pixel);
+        }
+        return min_max;
+      },
+      [](std::pair<Color, Color> min_max1,  // join() implementation
+         std::pair<Color, Color> min_max2) -> std::pair<Color, Color> {
+        return std::make_pair(std::min(min_max1.first, min_max2.first),
+                              std::max(min_max1.second, min_max2.second));
+      });
+}
+
+static std::pair<Color, Color> seqFindRange(const Image& image) {
+  std::pair<Color, Color> range({RANGEMAX, RANGEMIN});
+  for (int i = 0; i < image.size(); ++i) {
+    range.first = std::min(image[i], range.first);
+    range.second = std::max(image[i], range.second);
+  }
+  return range;
+}
+
+void sequentialLinearHistogramStretching(Image* image_ptr) {
+  Image& image = *image_ptr;
+  std::pair<Color, Color> range = seqFindRange(image);
+  if (range.second != range.first) {
+    for (auto& pixel : image) {
+      pixel = (pixel - range.first) * (RANGEMAX - RANGEMIN) /
+              (range.second - range.first);
+    }
+  }
+}
+
+void parallelLinearHistogramStretching(Image* image_ptr) {
+  Image& image = *image_ptr;
+  std::pair<Color, Color> min_max = parFindRange(image);
+  if (min_max.second != min_max.first) {
+    tbb::parallel_for(
+        tbb::blocked_range<size_t>(0, image.size()),
+        [&image, min_max](tbb::blocked_range<size_t> range) {
+          for (auto i = range.begin(); i < range.end(); ++i) {
+            image[i] = (image[i] - min_max.first) * (RANGEMAX - RANGEMIN) /
+                       (min_max.second - min_max.first);
+          }
+        });
+  }
+}
+	\end{lstlisting}
+	\newpage
+\end{document}
