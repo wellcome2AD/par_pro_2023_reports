@@ -1,0 +1,644 @@
+\documentclass[14pt, a4paper]{extarticle}
+\usepackage[utf8]{inputenc}
+\usepackage[T2A]{fontenc}
+\usepackage[a4paper,
+left=2cm,
+right=2cm,
+top=2cm,
+bottom=2cm]{geometry}
+\usepackage{color}
+\usepackage{mathtools}
+\usepackage{listings}
+\usepackage{graphicx}
+\usepackage{tocloft}
+\usepackage{indentfirst}
+\usepackage{enumitem}
+\usepackage[russian]{babel}
+
+\usepackage{diagbox}
+
+\setlength{\parindent}{0.8cm}
+\setlength{\parskip}{0.4cm}
+\renewcommand{\contentsname}{}
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=none,
+  language=C++,
+  aboveskip=3mm,
+  belowskip=3mm,
+  showstringspaces=false,
+  columns=flexible,
+  basicstyle={\small\ttfamily},
+  numbers=none,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue},
+  commentstyle=\color{dkgreen},
+  stringstyle=\color{mauve},
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=4
+}
+
+\title{}
+\author{}
+\date{}
+
+\begin{document}
+  \begin{titlepage}
+    \begin{center}
+      {\bfseries МИНИСТЕРСТВО НАУКИ И ВЫСШЕГО ОБРАЗОВАНИЯ \\
+        РОССИЙСКОЙ ФЕДЕРАЦИИ}
+      \\
+      Федеральное государственное автономное образовательное учреждение высшего образования
+      \\
+      {\bfseries «Национальный исследовательский Нижегородский государственный университет им. Н.И. Лобачевского»\\(ННГУ)
+        \\Институт информационных технологий, математики и механики} \\
+    \end{center}
+
+    \vspace{8em}
+
+    \begin{center}
+      ОТЧЕТ \\ по лабораторной работе \\
+      «Параллельная реализация построения выпуклой оболочки с помощью прохода Джарвиса.»
+    \end{center}
+
+    \vspace{5em}
+
+
+    \begin{flushright}
+      {\bfseries Выполнил:} студент группы\\382006-2\\Кролевец Н.А. \underline{\hspace{3cm}} \linebreak\linebreak\linebreak
+      {\bfseries Проверил:} младший научный\\сотрудник\\Нестеров А.Ю. \underline{\hspace{3cm}} 
+    \end{flushright}
+
+
+    \vspace{\fill}
+
+    \begin{center}
+      Нижний Новгород\\2023
+    \end{center}
+
+  \end{titlepage}
+
+  \tableofcontents
+  \thispagestyle{empty}
+  \newpage
+
+  \pagestyle{plain}
+  \setcounter{page}{3}
+
+  \section{Введение}
+    Данная лабораторная работа посвящена изучению и применению различных библиотек(и открытых стандартов) для распараллеливания вычислений программ на языке c++: Intel TBB и OpenMP. Также будет рассмотрен вариант на std::thread из стандартной библиотеки языка. Рассматриваемый в работе алгоритм - проход Джарвиса для построения выпуклой оболочки.
+
+    Этот алгоритм является одним из самых популярных и работает следующим образом: из множества точек выбирается самая левая(если таких точек несколько, то самая нижняя из них). Затем выбирается точка с минимальным полярным углом относительно предыдущей. Таким образом мы как будто бы заворачиваем множество точек в обертку, поэтому алгоритм иногда называют методом заворачивания подарка.
+
+    Хотспот алгоритма, а именно поиск точки с минимальным полярным углом на каждой последющей итерации можно распараллелить, что и будет сделано в этой лабораторной работе.
+
+  \newpage
+
+  \section{Постановка задачи}
+  Необходимо реализовать четыре варианта палгоритма Джарвиса с использованием языка программирования c++.
+   \begin{itemize}
+\itemПервый вариант - последовательный/однопоточный.
+\itemВторой вариант - OpenMP.
+\itemТретий вариант - TBB.
+\itemЧетвертый вариант - std::thread.
+
+\end{itemize}
+Контроль корректности будет проводится с помощью сравнения результатов работы каждой реализации с последовательной, которая тоже будет предварительно проверена на корректность (все тесты на корректность написаны с помощью фреймворка Google Test). Затем будут проведены тесты производительности. 
+  \newpage
+
+  \section{Описание алгоритма}
+
+  \begin{enumerate}
+    \item Заполнить массив случайными уникальными точками(однозначно представлены координатами x и y). Каждая координата имеет случайное равномерное распределение.
+      
+     \item Найти самую левую точку (если таких несколько, то самую нежниюю из них), пометить точку текущей и стартовой. Эта точка гарантированно будет в результирующей оболочке.
+
+     \item Поместить точку в результирующее множество точек(std::set).
+     
+     \item Найти точку с минимальным полярным углом относительно текущей (этот шаг можно выполнять параллельно на любой итерации алгоритма).
+
+     \item Поместить найденную точку в результирующее множество точек(std::set), пометить точку текущей.
+
+     \item Поиск точки с минимальным полярным углом относительно текущей пока не вернемся к стартовой точке.
+  \end{enumerate}
+
+  В итоге получим множество, являющееся выпуклой оболочкой.
+  \newpage
+
+  \section{Описание схемы распараллеливания}
+Поиск точки с минимальным полярным углом занимает ровно n итераций, их можно поделить между потоками. В конце итерации у каждого из потоков будет своя локальная точка с минимальным полярным углом. Затем в один поток из полученных точек будет выбрана подходящая и помещена в оболочку. Точка помечается текущей и наступает следующая итерация.
+
+Число потоков в случае TBB и OpenMP будет определено автоматически(в первом случае parallel for, во втором parallel reduction). В случае std::thread будет проводится деление n/thread\_num(где n - число точек в исходном массиве) с округлением в большую сторону, именно столько элементов достанется каждому потоку.
+
+  \newpage
+
+  \section{Результаты экспериментов}
+ Результаты измерения времени работы в микросекундах на процессоре с 6 физическими ядрами, hyper threading отключен:
+  \noindent\textbf{}\\\\
+    \begin{tabular}{|l||*{5}{c|}}\hline
+    \backslashbox{Технология}{Размер}
+    &\makebox[3em]{10}&\makebox[3em]{100}
+    &\makebox[3em]{1000}&\makebox[3em]{10000}\\\hline\hline
+    Seq &\makebox[3em]{2}&\makebox[3em]{8}
+    &\makebox[3em]{106}&\makebox[3em]{658}\\\hline
+    OMP &\makebox[3em]{41}&\makebox[3em]{90}
+    &\makebox[3em]{318}&\makebox[3em]{9223}\\\hline
+    TBB &\makebox[3em]{21}&\makebox[3em]{100}
+    &\makebox[3em]{488}&\makebox[3em]{4433}\\\hline
+    STD &\makebox[3em]{3282}&\makebox[3em]{4986}
+    &\makebox[3em]{4266}&\makebox[3em]{5650}\\\hline
+\end{tabular}
+
+  \newpage
+
+  \section{Вывод}
+  По результатам эксперимента можно сделать следующий вывод: использовать параллельную версию данного алгоритма эффективнее всего в тех случаях, когда точек очень много и можно гарантировать, что число элементов в оболочке велико и близко к n. Так как сложность алгоритма O(mn), где m - число точек в оболочке(на практике их всегда намного меньше, чем n), то следует учитывать накладные расходы на создание и завершение потоков, а так же на синхронизации между ними (например барьеры и атомики). У данного алгоритма сложность ближе к линейной, нежели к квадратичной, поэтому многопоточность нецелесообрасзна на малых размерах данных.
+
+  Также многопоточная реализацию в угоду производительности (не нужно писать в глобальный атомик) расходует слегка больше памяти (дополнительные локальные точки на каждый поток), но это вряд ли будет сколь угодно ощутимой проблемой при нынешних объемах памяти.
+
+  \newpage
+
+  \section{Заключение}
+В процессе выполнения лабораторной работы были успешно изучены и реализованы 4 варианта прохода Джарвиса (3 параллельных версии и последовательная) и проведены эксперименты, которые показали, что библиотеки с динамческим планированием выполнения показывают примерно одинаковый результат, в то время как std::thread с постоянным числом потоков на запуск показывает примерно одинаковое время на любом из размеров, из чего можно сделать вывод, что на небольших размерах (до 10000 и) время создания потока значительно дороже самих вычислений.
+
+В то же время параллельные версии значительно сложнее разрабатывать, отлаживать и поддерживать (например scheduler init в TBB с недавних пор не просто deprecated, но и удален из реализации библиотеки, что может вынудить в будущем переписывать программу под новую версию). Поэтому всегда стоит исходить из вычислительной сложности, масштаба проблемы и имеющихся ресурсов, чтобы получить приемлемый результат. 
+ 
+  \newpage
+
+    \section{Литература}
+    
+    \begin{enumerate}
+        \item Параллельное программирование с использованием технологии OpenMP. Антонов А.С.
+        \item Инструменты параллельного программирования для систем с общей памятью. К.В. Корняков, И.Б. Мееров, А.А. Сиднев, А.В. Сысоев, А.В. Шишков
+        \item  Проход Джарвиса // https://habr.com/ru/articles/144921/ (дата обращения: 25.03.2023). 
+    \end{enumerate}
+
+  \newpage
+
+  \section{Приложение}
+\subsection{Исходный код c++}
+  \subsubsection{Последовательная реализация}
+  \begin{lstlisting}
+
+int orientation(Point p, Point q, Point r) {
+  int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+  if (val == 0) return 0;    // Collinear
+  return (val > 0) ? 1 : 2;  // Clockwise or Counterclockwise
+}
+
+std::vector<Point> get_convex_hull(const std::vector<Point>& points) {
+  int n = points.size();
+  if (n < 3) return std::vector<Point>();
+
+  std::vector<Point> hull;
+
+  int l = 0;
+  for (int i = 1; i < n; i++) {
+    if (points[i].x < points[l].x) {
+      l = i;
+    }
+  }
+
+  int p = l;
+  int q;
+  do {
+    hull.push_back(points[p]);
+    q = (p + 1) % n;
+    for (int i = 0; i < n; i++) {
+      if (orientation(points[p], points[i], points[q]) == 2) {
+        q = i;
+      }
+    }
+
+    p = q;
+  } while (p != l);
+  return hull;
+}
+
+  \end{lstlisting}
+  \newpage
+  \subsubsection{OMP}
+  \begin{lstlisting}
+point_orientation orientation(Point p, Point q, Point r) {
+  int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+  if (val == 0) return point_orientation::colliniar;
+  return (val > 0) ? point_orientation::clockwise
+                   : point_orientation::counterclockwsise;
+}
+
+double dist2(Point a, Point b) {
+  int dx = b.x - a.x;
+  int dy = b.y - a.y;
+  return dx * dx + dy * dy;
+}
+
+std::vector<Point> get_convex_hull_omp(const std::vector<Point>& points) {
+  int n = points.size();
+  if (n < 3)
+    return std::vector<Point>();
+  else if (n == 3)
+    return std::vector<Point>(points);
+
+  std::set<Point> hull;
+
+  int start = 0;
+  for (int i = 1; i < n; i++) {
+    if (points[i] < points[start]) {
+      start = i;
+    }
+  }
+  int current = start;
+  int next;
+  std::vector<int> to_push_by_each_thread;
+#pragma omp parallel shared(start, next, current, n)
+  {
+    while (true) {
+#pragma omp single
+      { next = (current + 1) % n; }
+      int private_next = next;
+      bool was_used = false;
+#pragma omp for
+      for (int i = 0; i < n; ++i) {
+        if (orientation(points[current], points[private_next], points[i]) ==
+            point_orientation::counterclockwsise) {
+          private_next = i;
+          was_used = true;
+        }
+      }
+#pragma omp critical
+      {
+        if (was_used) {
+          to_push_by_each_thread.push_back(private_next);
+        }
+      }
+#pragma omp barrier
+#pragma omp single
+      {
+        for (int i = 0; i < to_push_by_each_thread.size(); ++i) {
+          if (orientation(points[current], points[next],
+                          points[to_push_by_each_thread[i]]) ==
+                  point_orientation::counterclockwsise ||
+              orientation(points[current], points[next],
+                          points[to_push_by_each_thread[i]]) ==
+                      point_orientation::colliniar &&
+                  dist2(points[current], points[next]) <
+                      dist2(points[current],
+                            points[to_push_by_each_thread[i]])) {
+            next = to_push_by_each_thread[i];
+          }
+        }
+        to_push_by_each_thread.clear();
+        for (int i = 0; i < n; i++) {
+          if (orientation(points[current], points[next], points[i]) ==
+              point_orientation::colliniar) {
+            hull.insert(points[i]);
+          }
+        }
+        current = next;
+      }
+      if (next == start) {
+        break;
+      }
+#pragma omp barrier
+    }
+  }
+  return std::vector<Point>(hull.begin(), hull.end());
+}
+  \end{lstlisting}
+  \newpage
+    \subsubsection{TBB}
+  \begin{lstlisting}
+
+point_orientation orientation(const Point& p, const Point& q, const Point& r) {
+  int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+  if (val == 0) return point_orientation::colliniar;
+  return (val > 0) ? point_orientation::clockwise
+                   : point_orientation::counterclockwsise;
+}
+
+double dist2(const Point& a, const Point& b) {
+  int dx = b.x - a.x;
+  int dy = b.y - a.y;
+
+  return dx * dx + dy * dy;
+}
+
+struct MyFunctor {
+  int current;
+  int next;
+  const std::vector<Point>& points;
+  MyFunctor(const std::vector<Point>& input, int next, int current)
+      : next(next), current(current), points(input) {}
+  MyFunctor(const MyFunctor& other, tbb::split)
+      : next(other.next), current(other.current), points(other.points) {}
+  void operator()(const tbb::blocked_range<int>& r) {
+    for (int i = r.begin(); i != r.end(); ++i) {
+      if (orientation(points[current], points[next], points[i]) ==
+          point_orientation::counterclockwsise) {
+        next = i;
+      }
+    }
+  }
+  void join(const MyFunctor& other) {
+    if (orientation(points[current], points[next], points[other.next]) ==
+            point_orientation::counterclockwsise ||
+        orientation(points[current], points[next], points[other.next]) ==
+                point_orientation::colliniar &&
+            dist2(points[current], points[next]) <
+                dist2(points[current], points[other.next])) {
+      next = other.next;
+    }
+  }
+};
+
+std::vector<Point> get_convex_hull_tbb(const std::vector<Point>& points) {
+  int n = points.size();
+  if (n < 3)
+    return std::vector<Point>();
+  else if (n == 3)
+    return std::vector<Point>(points);
+
+  std::set<Point> hull;
+  int start = 0;
+  for (int i = 1; i < n; i++) {
+    if (points[i] < points[start]) {
+      start = i;
+    }
+  }
+  int current = start;
+  int next;
+  while (true) {
+    next = (current + 1) % n;
+    MyFunctor temp(points, next, current);
+    tbb::parallel_reduce(tbb::blocked_range<int>(0, n), temp);
+    next = temp.next;
+    for (int i = 0; i < n; i++) {
+      if (orientation(points[current], points[next], points[i]) ==
+          point_orientation::colliniar) {
+        hull.insert(points[i]);
+      }
+    }
+    current = next;
+    if (next == start) {
+      break;
+    }
+  }
+  return std::vector<Point>(hull.begin(), hull.end());
+}
+
+  \end{lstlisting}
+  \newpage
+    \subsubsection{std::thread}
+  \begin{lstlisting}
+
+point_orientation orientation(const Point& p, const Point& q, const Point& r) {
+  int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+  if (val == 0) return point_orientation::colliniar;
+  return (val > 0) ? point_orientation::clockwise
+                   : point_orientation::counterclockwsise;
+}
+
+double dist2(const Point& a, const Point& b) {
+  int dx = b.x - a.x;
+  int dy = b.y - a.y;
+  return dx * dx + dy * dy;
+}
+
+void thread_func(int begin, int end, int current,
+                 const std::vector<Point>& points, int* per_thread_next) {
+  for (int i = begin; i < end; ++i) {
+    if (orientation(points[current], points[*per_thread_next], points[i]) ==
+        point_orientation::counterclockwsise) {
+      *per_thread_next = i;
+    }
+  }
+}
+
+std::vector<Point> get_convex_hull_std(const std::vector<Point>& points,
+                                       int thread_num) {
+  int n = points.size();
+  if (n < 3)
+    return std::vector<Point>();
+  else if (n == 3)
+    return std::vector<Point>(points);
+
+  std::set<Point> hull;
+  std::vector<int> per_thread_next(thread_num, -1);
+  int start = 0;
+  for (int i = 1; i < n; i++) {
+    if (points[i] < points[start]) {
+      start = i;
+    }
+  }
+  int current = start;
+  int next;
+  while (true) {
+    std::vector<std::thread> threads;
+    next = (current + 1) % n;
+    std::fill(per_thread_next.begin(), per_thread_next.end(), next);
+    for (uint64_t i = 0; i < thread_num; ++i) {
+      int operations_per_thread = (n + thread_num - 1) / thread_num;
+      threads.push_back(
+          std::thread(thread_func, operations_per_thread * i,
+                      std::min(operations_per_thread * (i + 1), uint64_t(n)),
+                      current, std::ref(points), &per_thread_next[i]));
+    }
+    for (uint64_t i = 0; i < thread_num; ++i) {
+      threads[i].join();
+    }
+    for (uint64_t i = 0; i < thread_num; ++i) {
+      if (orientation(points[current], points[next],
+                      points[per_thread_next[i]]) ==
+              point_orientation::counterclockwsise ||
+          orientation(points[current], points[next],
+                      points[per_thread_next[i]]) ==
+                  point_orientation::colliniar &&
+              dist2(points[current], points[next]) <
+                  dist2(points[current], points[per_thread_next[i]])) {
+        next = per_thread_next[i];
+      }
+    }
+
+    for (int i = 0; i < n; i++) {
+      if (orientation(points[current], points[next], points[i]) ==
+          point_orientation::colliniar) {
+        hull.insert(points[i]);
+      }
+    }
+    current = next;
+    if (next == start) {
+      break;
+    }
+  }
+  return std::vector<Point>(hull.begin(), hull.end());
+}
+\end{lstlisting}
+
+\subsection{Тесты последовательной реализации }
+
+\begin{lstlisting}
+TEST(convex_hull_test, return_empty_vector) {
+  std::vector<Point> input;
+  input.push_back(Point(1, 0));
+  input.push_back(Point(1, 2));
+  auto output = get_convex_hull(input);
+  EXPECT_EQ(output.size(), 0);
+}
+
+TEST(convex_hull_test, hull_of_three_points) {
+  std::vector<Point> input;
+  input.push_back(Point(1, 0));
+  input.push_back(Point(1, 2));
+  input.push_back(Point(1, 3));
+  auto output = get_convex_hull(input);
+  std::sort(input.begin(), input.end());
+  std::sort(output.begin(), output.end());
+  EXPECT_TRUE(output[0] == output[0]);
+  EXPECT_TRUE(output[1] == output[1]);
+  EXPECT_TRUE(output[2] == output[2]);
+}
+
+TEST(convex_hull_test, hull_of_five_points) {
+  std::vector<Point> input;
+  input.push_back(Point(-1, 0));
+  input.push_back(Point(0, 1));
+  input.push_back(Point(0, -1));
+  input.push_back(Point(1, 0));
+  input.push_back(Point(0, 0));
+  auto output = get_convex_hull(input);
+  std::cout << output.size() << std::endl;
+  std::sort(output.begin(), output.end());
+  EXPECT_EQ(output.size(), 4);
+  EXPECT_TRUE(output[0] == Point(-1, 0));
+  EXPECT_TRUE(output[1] == Point(0, -1));
+  EXPECT_TRUE(output[2] == Point(0, 1));
+  EXPECT_TRUE(output[3] == Point(1, 0));
+}
+
+TEST(convex_hull_test, collinear_points) {
+  std::vector<Point> input;
+  input.push_back(Point(0, 0));
+  input.push_back(Point(0, 4));
+  input.push_back(Point(4, 0));
+  input.push_back(Point(1, 1));
+  input.push_back(Point(2, 2));
+  auto output = get_convex_hull(input);
+  std::sort(output.begin(), output.end());
+  EXPECT_EQ(output.size(), 3);
+  EXPECT_TRUE(output[0] == Point(0, 0));
+  EXPECT_TRUE(output[1] == Point(0, 4));
+  EXPECT_TRUE(output[2] == Point(4, 0));
+}
+
+TEST(convex_hull_test, only_collinear_points) {
+  std::vector<Point> input;
+  input.push_back(Point(0, 0));
+  input.push_back(Point(1, 1));
+  input.push_back(Point(2, 2));
+  input.push_back(Point(3, 3));
+  auto output = get_convex_hull(input);
+  std::sort(output.begin(), output.end());
+  EXPECT_EQ(output.size(), 4);
+  EXPECT_TRUE(output[0] == Point(0, 0));
+  EXPECT_TRUE(output[1] == Point(1, 1));
+  EXPECT_TRUE(output[2] == Point(2, 2));
+  EXPECT_TRUE(output[3] == Point(3, 3));
+}
+
+\end{lstlisting}
+
+\subsection{Тесты параллельных реализаций (отличаются друг от друга функцией get\_convex\_hull\_[название технологии]) }
+\begin{lstlisting}
+
+void fill_vec(std::vector<Point>* vec, uint32_t size) {
+  std::set<Point> unique_points;
+  std::random_device dev;
+  std::mt19937 rng(dev());
+  std::uniform_int_distribution<int> dist(0, size << 1);
+  while (unique_points.size() != size) {
+    unique_points.insert(Point(dist(rng), dist(rng)));
+  }
+  std::copy(unique_points.begin(), unique_points.end(),
+            std::back_inserter(*vec));
+  std::shuffle(vec->begin(), vec->end(), rng);
+}
+
+void print_vecs(std::vector<Point> a, std::vector<Point> b) {
+  std::cout << "First size is " << a.size() << std::endl;
+  for (uint64_t i = 0; i < a.size(); ++i) {
+    std::cout << a[i].x << " " << a[i].y << std::endl;
+  }
+  std::cout << "Second size is " << b.size() << std::endl;
+  for (uint64_t i = 0; i < b.size(); ++i) {
+    std::cout << b[i].x << " " << b[i].y << std::endl;
+  }
+}
+
+TEST(convex_hull_test, return_empty_vector) {
+  std::vector<Point> input;
+  auto output = get_convex_hull(input);
+  auto output2 = get_convex_hull_std(input, 4);
+  EXPECT_EQ(output.size(), 0);
+  EXPECT_EQ(output2.size(), 0);
+}
+
+TEST(convex_hull_test, hull_of_three) {
+  std::vector<Point> input;
+  fill_vec(&input, 3);
+  auto output = get_convex_hull(input);
+  auto output2 = get_convex_hull_std(input, 8);
+  bool dumb_lint1 = output.size() == output2.size();
+  bool dumb_lint2 = output == output2;
+  bool dumb_lint3 = output.size() == 3;
+  EXPECT_EQ(dumb_lint1, true);
+  EXPECT_EQ(dumb_lint2, true);
+  EXPECT_EQ(dumb_lint3, true);
+}
+
+TEST(convex_hull_test, hull_of_ten) {
+  std::vector<Point> input;
+  fill_vec(&input, 10);
+  auto output = get_convex_hull(input);
+  auto output2 = get_convex_hull_std(input, 16);
+  if (output.size() != output2.size()) {
+    print_vecs(output, output2);
+    print_vecs(input, input);
+  }
+  bool dumb_lint1 = output.size() == output2.size();
+  bool dumb_lint2 = output == output2;
+  EXPECT_EQ(dumb_lint1, true);
+  EXPECT_EQ(dumb_lint2, true);
+}
+
+TEST(convex_hull_test, hull_of_hundred) {
+  std::vector<Point> input;
+  fill_vec(&input, 100);
+  auto output = get_convex_hull(input);
+  auto output2 = get_convex_hull_std(input, 32);
+  if (output.size() != output2.size()) {
+    print_vecs(output, output2);
+  }
+  bool dumb_lint1 = output.size() == output2.size();
+  bool dumb_lint2 = output == output2;
+  EXPECT_EQ(dumb_lint1, true);
+  EXPECT_EQ(dumb_lint2, true);
+}
+
+TEST(convex_hull_test, hull_of_thousand) {
+  std::vector<Point> input;
+  fill_vec(&input, 1000);
+  auto output = get_convex_hull(input);
+  auto output2 = get_convex_hull_std(input, 64);
+  bool dumb_lint1 = output.size() == output2.size();
+  bool dumb_lint2 = output == output2;
+  EXPECT_EQ(dumb_lint1, true);
+  EXPECT_EQ(dumb_lint2, true);
+}
+
+
+\end{lstlisting}
+\end{document}
